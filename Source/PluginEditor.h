@@ -2,48 +2,44 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "ui/BandPanel.h"
+#include "ui/EqGraph.h"
+#include "ui/EqModel.h"
+#include "ui/Theme.h"
+
 class FabCutieAudioProcessor;
 
-// Temporary editor for testing the EQ engine: pick a band, then edit its
-// controls. The frequency-graph UI replaces the body of this component later.
+// The main window: a header with output gain and bypass, the frequency graph
+// filling the rest, and a band panel that floats next to the selected node.
 class FabCutieAudioProcessorEditor final : public juce::AudioProcessorEditor
 {
 public:
     explicit FabCutieAudioProcessorEditor (FabCutieAudioProcessor&);
-    ~FabCutieAudioProcessorEditor() override = default;
+    ~FabCutieAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    using SliderAttachment   = juce::AudioProcessorValueTreeState::SliderAttachment;
-    using ButtonAttachment   = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    struct LabelledSlider
-    {
-        juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
-        juce::Label label;
-    };
+    void updateBandPanel();
 
-    void selectBand (int bandIndex);
-
+    fabcutie::ui::LookAndFeel lookAndFeel;
     juce::AudioProcessorValueTreeState& state;
+    fabcutie::ui::EqModel model;
 
-    juce::ComboBox bandSelector;
-    juce::ToggleButton bandEnabled { "On" };
-    juce::ComboBox bandType, bandSlope, bandPlacement;
-    LabelledSlider bandFrequency, bandGain, bandQ;
+    fabcutie::ui::EqGraph graph;
+    fabcutie::ui::BandPanel bandPanel;
 
-    std::unique_ptr<ButtonAttachment> bandEnabledAttachment;
-    std::unique_ptr<ComboBoxAttachment> bandTypeAttachment, bandSlopeAttachment, bandPlacementAttachment;
-    std::unique_ptr<SliderAttachment> bandFrequencyAttachment, bandGainAttachment, bandQAttachment;
-
-    LabelledSlider outputGain;
-    juce::ToggleButton bypassButton { "Bypass" };
+    juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
+    juce::TextButton bypassButton { "Bypass" };
 
     std::unique_ptr<SliderAttachment> outputGainAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
+
+    juce::TooltipWindow tooltips { this, 700 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessorEditor)
 };

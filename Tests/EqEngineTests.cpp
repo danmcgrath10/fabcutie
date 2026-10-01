@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "dsp/EqEngine.h"
+#include "ui/GraphGeometry.h"
 
 using namespace fabcutie::dsp;
 
@@ -354,6 +355,26 @@ namespace
 
         check (std::abs (10.0 * std::log10 (out / in) + 6.0) < 0.1, "mono: mid bands apply, side bands do not");
     }
+
+    // The graph's pixel mapping must round-trip, so dragging a node lands
+    // exactly where the pointer is.
+    void testGraphGeometry()
+    {
+        fabcutie::ui::GraphGeometry geo;
+        geo.x = 20.0f; geo.width = 900.0f; geo.y = 14.0f; geo.height = 500.0f; geo.rangeDb = 12.0f;
+
+        check (std::abs (geo.xForFrequency (geo.minHz) - geo.x) < 1.0e-3f, "graph: lowest frequency at the left edge");
+        check (std::abs (geo.xForFrequency (geo.maxHz) - (geo.x + geo.width)) < 1.0e-2f, "graph: highest frequency at the right edge");
+        check (std::abs (geo.yForDb (0.0f) - (geo.y + geo.height * 0.5f)) < 1.0e-3f, "graph: 0 dB in the middle");
+        check (std::abs (geo.yForDb (12.0f) - geo.y) < 1.0e-3f, "graph: +range at the top");
+
+        for (float hz : { 10.0f, 47.0f, 1000.0f, 12345.0f, 30000.0f })
+            check (std::abs (geo.frequencyForX (geo.xForFrequency (hz)) / hz - 1.0f) < 1.0e-4f,
+                   "graph: frequency round-trip at " + std::to_string (hz));
+
+        for (float db : { -30.0f, -3.5f, 0.0f, 7.25f, 30.0f })
+            check (std::abs (geo.dbForY (geo.yForDb (db)) - db) < 1.0e-4f, "graph: gain round-trip at " + std::to_string (db));
+    }
 }
 
 int main()
@@ -365,9 +386,10 @@ int main()
     testMono();
     testSmoothSwitching();
     testAutomationStability();
+    testGraphGeometry();
 
     if (failures == 0)
-        std::printf ("All EQ engine tests passed.\n");
+        std::printf ("All tests passed.\n");
     else
         std::printf ("%d EQ engine test(s) failed.\n", failures);
 

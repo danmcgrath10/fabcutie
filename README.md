@@ -4,7 +4,7 @@ An open-source parametric EQ plugin for macOS and Windows (AU, VST3 and Standalo
 
 FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q 3. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
 
-> **Status:** the EQ engine works, behind a temporary test editor (pick a band, then set its controls). The draw-on-the-graph interface is next.
+> **Status:** the EQ engine and the draw-on-the-graph interface work. The real-time spectrum analyzer is next.
 
 ## What it does
 
@@ -15,11 +15,27 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
 - Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 
+## Using the graph
+
+| Action | What it does |
+|---|---|
+| Double-click empty space | Add a band there (a cut below 20 Hz or above 20 kHz, otherwise a bell) |
+| Drag a node | Frequency and gain; for cut, notch and band pass, up/down sets Q. Hold Shift for fine moves |
+| Scroll over a node | Q. With Alt/Option held, steps a cut's slope |
+| Double-click a node | Remove the band |
+| Cmd/Ctrl/Shift-click, or drag on empty space | Select several nodes, then drag them together |
+| Right-click a node | Filter type, slope, placement, remove |
+| Right-click empty space | Add a band, display range, remove all |
+| Delete / Backspace | Remove the selected bands |
+| `±12 dB` button (top right) | Cycle the display range: ±3, ±6, ±12, ±30 dB |
+
+The selected band's panel floats over the graph: type, slope, placement and frequency/gain/Q knobs (double-click a knob to reset it). Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
+
 ## Roadmap
 
 1. **Plugin skeleton** (done): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
 2. **EQ engine** (done): up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
-3. **Interface:** interactive frequency graph (drag nodes for frequency and gain, scroll for Q) over a real-time spectrum analyzer.
+3. **Interface:** interactive frequency graph with draggable nodes and a floating band panel (done); real-time spectrum analyzer behind the curve, then polish.
 4. **Advanced:** dynamic EQ per band, linear-phase mode, analyzer collision display.
 
 ## Download a build

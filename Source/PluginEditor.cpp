@@ -4,134 +4,111 @@
 
 namespace
 {
-    const auto background = juce::Colour (0xff15171c);
-    const auto accent     = juce::Colour (0xffff7aa8);
+    constexpr int headerHeight = 44;
 
-    void setUpSlider (juce::Component& parent, juce::Slider& slider, juce::Label& label, const juce::String& name)
-    {
-        slider.setColour (juce::Slider::rotarySliderFillColourId, accent);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 20);
-        parent.addAndMakeVisible (slider);
-
-        label.setText (name, juce::dontSendNotification);
-        label.setJustificationType (juce::Justification::centred);
-        parent.addAndMakeVisible (label);
-    }
+    // Editor settings saved with the session, next to the parameters.
+    const juce::Identifier editorWidthId  { "editorWidth" };
+    const juce::Identifier editorHeightId { "editorHeight" };
+    const juce::Identifier rangeDbId      { "displayRangeDb" };
 }
 
 FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcessor& p)
-    : AudioProcessorEditor (&p), state (p.getState())
+    : AudioProcessorEditor (&p),
+      state (p.getState()),
+      model (state),
+      graph (model, [&p] { return p.getSampleRate(); }),
+      bandPanel (model)
 {
     using namespace fabcutie;
 
-    for (int b = 0; b < dsp::maxBands; ++b)
-        bandSelector.addItem ("Band " + juce::String (b + 1), b + 1);
+    addAndMakeVisible (graph);
+    addChildComponent (bandPanel);
 
-    bandSelector.onChange = [this] { selectBand (bandSelector.getSelectedId() - 1); };
-    addAndMakeVisible (bandSelector);
-    addAndMakeVisible (bandEnabled);
+    graph.setRangeDb ((float) state.state.getProperty (rangeDbId, 12.0f));
+    graph.onRangeChanged = [this] (float db) { state.state.setProperty (rangeDbId, db, nullptr); };
+    graph.onSelectionChanged = [this] { updateBandPanel(); };
+    graph.onBandsChanged = [this] { updateBandPanel(); };
 
-    // ComboBoxAttachment maps choice index i to item id i + 1.
-    bandType.addItemList (params::filterTypeNames(), 1);
-    bandSlope.addItemList (params::slopeNames(), 1);
-    bandPlacement.addItemList (params::placementNames(), 1);
+    outputGain.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, 18);
+    outputGain.setTooltip ("Output gain");
+    outputGain.setDoubleClickReturnValue (true, 0.0);
+    addAndMakeVisible (outputGain);
 
-    for (auto* box : { &bandType, &bandSlope, &bandPlacement })
-        addAndMakeVisible (*box);
-
-    setUpSlider (*this, bandFrequency.slider, bandFrequency.label, "Frequency");
-    setUpSlider (*this, bandGain.slider, bandGain.label, "Gain");
-    setUpSlider (*this, bandQ.slider, bandQ.label, "Q");
-    setUpSlider (*this, outputGain.slider, outputGain.label, "Output");
-
+    bypassButton.setClickingTogglesState (true);
     addAndMakeVisible (bypassButton);
 
-    outputGainAttachment = std::make_unique<SliderAttachment> (state, params::id::outputGain, outputGain.slider);
+    outputGainAttachment = std::make_unique<SliderAttachment> (state, params::id::outputGain, outputGain);
     bypassAttachment     = std::make_unique<ButtonAttachment> (state, params::id::bypass, bypassButton);
 
-    bandSelector.setSelectedId (1); // triggers selectBand (0)
+    // After the children exist, so they all pick it up.
+    setLookAndFeel (&lookAndFeel);
 
     setResizable (true, true);
-    setResizeLimits (640, 300, 1600, 1000);
-    setSize (820, 420);
+    setResizeLimits (640, 380, 2400, 1500);
+    setSize ((int) state.state.getProperty (editorWidthId, 960),
+             (int) state.state.getProperty (editorHeightId, 580));
 }
 
-void FabCutieAudioProcessorEditor::selectBand (int b)
+FabCutieAudioProcessorEditor::~FabCutieAudioProcessorEditor()
 {
-    using namespace fabcutie::params;
+    setLookAndFeel (nullptr);
+}
 
-    if (b < 0)
+void FabCutieAudioProcessorEditor::updateBandPanel()
+{
+    const auto band = graph.getPrimaryBand();
+    bandPanel.setBand (band);
+    bandPanel.setVisible (band >= 0);
+
+    if (band < 0)
         return;
 
-    // Detach from the previous band before attaching to the new one.
-    bandEnabledAttachment.reset();
-    bandTypeAttachment.reset();
-    bandSlopeAttachment.reset();
-    bandPlacementAttachment.reset();
-    bandFrequencyAttachment.reset();
-    bandGainAttachment.reset();
-    bandQAttachment.reset();
+    // Follow the node horizontally. Sit along the bottom of the graph, or
+    // along the top when the node is low enough that the panel would hide it.
+    const auto area = graph.getBounds().reduced (10, 0);
+    const auto node = graph.getNodePosition (band) + graph.getPosition().toFloat();
+    const auto width = juce::jmin (fabcutie::ui::BandPanel::preferredWidth, area.getWidth());
+    const auto height = fabcutie::ui::BandPanel::preferredHeight;
 
-    bandEnabledAttachment   = std::make_unique<ButtonAttachment>   (state, bandParamId (b, BandParam::enabled), bandEnabled);
-    bandTypeAttachment      = std::make_unique<ComboBoxAttachment> (state, bandParamId (b, BandParam::type), bandType);
-    bandSlopeAttachment     = std::make_unique<ComboBoxAttachment> (state, bandParamId (b, BandParam::slope), bandSlope);
-    bandPlacementAttachment = std::make_unique<ComboBoxAttachment> (state, bandParamId (b, BandParam::placement), bandPlacement);
-    bandFrequencyAttachment = std::make_unique<SliderAttachment>   (state, bandParamId (b, BandParam::frequency), bandFrequency.slider);
-    bandGainAttachment      = std::make_unique<SliderAttachment>   (state, bandParamId (b, BandParam::gain), bandGain.slider);
-    bandQAttachment         = std::make_unique<SliderAttachment>   (state, bandParamId (b, BandParam::q), bandQ.slider);
+    const auto bottomY = area.getBottom() - height - 30;
+    const auto y = node.y > (float) bottomY - 24.0f ? area.getY() + 34 : bottomY;
+    const auto x = juce::jlimit (area.getX(), area.getRight() - width, juce::roundToInt (node.x) - width / 2);
+
+    bandPanel.setBounds (x, y, width, height);
 }
 
 void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (background);
+    using namespace fabcutie::ui;
 
-    auto header = getLocalBounds().removeFromTop (48).reduced (16, 0);
-    g.setColour (accent);
-    g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-    g.drawFittedText ("FabCutie", header, juce::Justification::centredLeft, 1);
+    g.fillAll (colours::background);
 
-    g.setColour (juce::Colours::white.withAlpha (0.4f));
-    g.setFont (juce::FontOptions (13.0f));
-    g.drawFittedText ("v" JucePlugin_VersionString, header, juce::Justification::centredRight, 1);
+    auto header = getLocalBounds().removeFromTop (headerHeight).reduced (16, 0);
+    g.setColour (colours::accent);
+    g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
+    g.drawText ("FabCutie", header, juce::Justification::centredLeft);
+
+    g.setColour (colours::textDim.withMultipliedAlpha (0.6f));
+    g.setFont (juce::FontOptions (12.0f));
+    g.drawText ("v" JucePlugin_VersionString, header.withTrimmedLeft (98), juce::Justification::centredLeft);
+
+    g.setColour (colours::textDim);
+    g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+    g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
 }
 
 void FabCutieAudioProcessorEditor::resized()
 {
-    auto area = getLocalBounds().reduced (16);
-    area.removeFromTop (40);
+    auto area = getLocalBounds();
+    auto header = area.removeFromTop (headerHeight).reduced (16, 6);
 
-    // Output section on the right.
-    auto output = area.removeFromRight (140);
-    output.removeFromTop (40);
-    outputGain.label.setBounds (output.removeFromTop (24));
-    bypassButton.setBounds (output.removeFromBottom (28).withSizeKeepingCentre (90, 28));
-    outputGain.slider.setBounds (output.removeFromTop (juce::jmin (output.getHeight(), 160)));
+    bypassButton.setBounds (header.removeFromRight (72).withSizeKeepingCentre (72, 24));
+    header.removeFromRight (16);
+    outputGain.setBounds (header.removeFromRight (100));
 
-    area.removeFromRight (16);
+    graph.setBounds (area);
+    updateBandPanel();
 
-    // Band selector and choice boxes along the top.
-    auto row = area.removeFromTop (28);
-    const auto boxWidth = (row.getWidth() - 4 * 8 - 60) / 4;
-    bandSelector.setBounds (row.removeFromLeft (boxWidth));
-    row.removeFromLeft (8);
-    bandEnabled.setBounds (row.removeFromLeft (60));
-    row.removeFromLeft (8);
-    bandType.setBounds (row.removeFromLeft (boxWidth));
-    row.removeFromLeft (8);
-    bandSlope.setBounds (row.removeFromLeft (boxWidth));
-    row.removeFromLeft (8);
-    bandPlacement.setBounds (row);
-
-    area.removeFromTop (12);
-
-    // Three knobs for the selected band.
-    auto knobs = area.withHeight (juce::jmin (area.getHeight(), 184));
-    const auto knobWidth = knobs.getWidth() / 3;
-
-    for (auto* knob : { &bandFrequency, &bandGain, &bandQ })
-    {
-        auto cell = knobs.removeFromLeft (knobWidth);
-        knob->label.setBounds (cell.removeFromTop (24));
-        knob->slider.setBounds (cell);
-    }
+    state.state.setProperty (editorWidthId, getWidth(), nullptr);
+    state.state.setProperty (editorHeightId, getHeight(), nullptr);
 }

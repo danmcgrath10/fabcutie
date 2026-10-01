@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FabCutie VERSION 0.2.0 LANGUAGES C CXX)
+project(FabCutie VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,7 +59,11 @@ juce_add_plugin(FabCutie
 target_sources(FabCutie PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/Parameters.cpp)
+    Source/Parameters.cpp
+    Source/ui/Theme.cpp
+    Source/ui/EqModel.cpp
+    Source/ui/EqGraph.cpp
+    Source/ui/BandPanel.cpp)
 
 target_include_directories(FabCutie PRIVATE Source)
 
