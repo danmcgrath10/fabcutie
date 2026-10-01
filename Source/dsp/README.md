@@ -15,13 +15,25 @@ Audio-thread code lives here, independent of the UI.
 - `BandDynamics.h`: a dynamic band's detector (sidechain filter, peak level with release,
   linked across channels) and gain computer (threshold, range, soft knee, attack).
 - `EqEngine.h`: 24 bands in series with per-band stereo/left/right/mid/side routing, and the
-  external sidechain buffer for dynamic bands that listen to it.
+  external sidechain buffer for dynamic bands that listen to it. In surround the placements pick
+  speakers by side (all / left / right / centre line / off-centre) instead of matrixing M/S.
+- `ChannelLayout.h`: speaker sides of the main bus and the surround layouts offered (up to 9.1.6,
+  16 channels; no discrete or ambisonic sets).
 - `Character.h`: global Clean/Gentle/Warm saturation after the bands, run at 4x oversampling
   so its harmonics don't alias. Unity gain for quiet signals; Clean is a bit-exact bypass.
+- `SpectralDynamics.h`: spectral dynamics: a 2048-point STFT (75% overlap, square-root Hann,
+  exact rebuild) that gives every bin inside a spectral band its own gain offset. Runs
+  after `EqEngine`; adds 2048 samples of latency while any band uses it.
+- `CurveFit.h`: fits bells and shelves to a target curve (EQ Sketch, EQ Match).
+- `SpectrumMatch.h`: long-term average spectrum and the match curve between two of them.
 - `OutputStage.h`: smoothed output gain and bypass.
 - `AudioTap.h`: lock-free mono feed from the audio thread to the analyzer.
 - `SpectrumAnalyzer.h`: FFT, windowing and smoothing for the analyzer (runs on the message thread).
 - `PeakMeter.h`: per-channel peak capture for the output meter.
 - `BandSolo.h`: intelligent solo, auditions the region a band works on.
-- `EditorLink.h`: the taps, meter, sidechain flag and solo band shared with the editor.
-- Planned: linear-phase mode.
+- `EditorLink.h`: the taps, meter, sidechain flag, main channel count and solo band shared with
+  the editor. The taps fill while any editor (its own, or another instance's) shows the analyzer.
+- `PhaseModes.h`: Natural and Linear Phase. Designs one FIR kernel for all static bands from the
+  analog prototypes (a 2 x 2 matrix of kernels when mid/side bands mix left and right), runs it with
+  uniformly partitioned FFT convolution, designs new kernels on a background thread (inline when
+  rendering offline) and crossfades them in, and delays the sidechain to match the latency.

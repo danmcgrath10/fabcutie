@@ -32,10 +32,21 @@ namespace fabcutie::ui
 
         // First band that is switched off, or -1 when all are in use.
         int findFreeBand() const noexcept;
+        int countFreeBands() const noexcept;
 
         // Switches a band on with fresh settings.
         void addBand (int band, dsp::FilterType type, float frequency, float gainDb);
         void removeBand (int band);
+
+        // EQ Sketch and EQ Match: adds bands in the free slots so the whole
+        // EQ draws `targetDb` (dB at each of `hz`) as closely as up to
+        // maxBands new bands can. The bands already on stay as they are.
+        // Returns the bands that were added.
+        juce::Array<int> addBandsForCurve (const std::vector<double>& hz, const std::vector<double>& targetDb,
+                                           int maxBands, double sampleRate);
+
+        // The combined static response of the enabled bands, in dB.
+        std::vector<double> getTotalCurve (const std::vector<double>& hz, double sampleRate) const;
 
         // Piano roll display: show notes on the graph and snap band
         // frequencies to them while dragging.
@@ -61,6 +72,16 @@ namespace fabcutie::ui
         static bool usesQ (const dsp::BandSettings& s) noexcept
         {
             return s.type != dsp::FilterType::flatTilt && ! (usesSlope (s.type) && dsp::isBrickwall (s.slopeIndex));
+        }
+
+        // Placement names as the band panel and menus show them. In surround
+        // they select speakers by side rather than mid/side (see EqEngine).
+        static juce::StringArray placementNames (bool surround)
+        {
+            if (surround)
+                return { "All", "Left", "Right", "Centre", "Sides" };
+
+            return params::placementNames();
         }
 
         static bool usesDynamics (dsp::FilterType t) noexcept { return dsp::supportsDynamics (t); }

@@ -13,52 +13,88 @@ namespace
     const juce::Identifier editorWidthId  { "editorWidth" };
     const juce::Identifier editorHeightId { "editorHeight" };
     const juce::Identifier rangeDbId      { "displayRangeDb" };
+
+    // Phase menu item IDs: the two minimum/analog-phase modes, then one per
+    // linear phase resolution.
+    constexpr int zeroLatencyItem = 1;
+    constexpr int naturalItem = 2;
+    constexpr int firstLinearItem = 10;
 }
+
+struct FabCutieAudioProcessorEditor::View
+{
+    explicit View (FabCutieAudioProcessor& p)
+        : processor (p),
+          state (p.getState()),
+          link (p.getEditorLink()),
+          model (state),
+          graph (model, [&p] { return p.getSampleRate(); }),
+          bandPanel (model),
+          spectrum (graph, link, [&p] { return p.getSampleRate(); }),
+          meter (link.outputMeter),
+          matchPanel (model, link, [&p] { return p.getSampleRate(); }),
+          workflowBar (p.getHistory(), p.getABCompare(), p.getPresets(), p.getMidiLearn()),
+          outputBar (state, [&p] { return p.getAutoGainDb(); }),
+          midiLearnMenu (p.getParameterSet(), p.getMidiLearn())
+    {
+        model.setDynamicGainSource (&p.getDynamicGains());
+
+        graph.setBackgroundLayer (&spectrum);
+        graph.setPeakSource (&spectrum);
+        graph.setSoloTarget (&link.soloBand);
+        bandPanel.setSoloTarget (&link.soloBand);
+        graph.setRangeDb ((float) state.state.getProperty (rangeDbId, 12.0f));
+    }
+
+    ~View()
+    {
+        // Solo is a listening aid: it never outlives the window.
+        link.soloBand.store (-1);
+        graph.setPeakSource (nullptr);
+        graph.setBackgroundLayer (nullptr);
+    }
+
+    FabCutieAudioProcessor& processor;
+    juce::AudioProcessorValueTreeState& state;
+    fabcutie::dsp::EditorLink& link;
+
+    fabcutie::ui::EqModel model;
+    fabcutie::ui::EqGraph graph;
+    fabcutie::ui::BandPanel bandPanel;
+    fabcutie::ui::SpectrumDisplay spectrum;
+    fabcutie::ui::LevelMeter meter;
+    fabcutie::ui::MatchPanel matchPanel;
+    fabcutie::ui::WorkflowBar workflowBar;
+    fabcutie::ui::OutputBar outputBar;
+    fabcutie::ui::MidiLearnMenu midiLearnMenu;
+
+    std::unique_ptr<SliderAttachment> outputGainAttachment;
+    std::unique_ptr<ButtonAttachment> bypassAttachment;
+    std::unique_ptr<ComboBoxAttachment> characterAttachment;
+    std::unique_ptr<juce::ParameterAttachment> phaseModeAttachment, resolutionAttachment;
+
+    bool surround = false;
+};
 
 FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcessor& p)
     : AudioProcessorEditor (&p),
-      state (p.getState()),
-      link (p.getEditorLink()),
-      model (state),
-      graph (model, [&p] { return p.getSampleRate(); }),
-      bandPanel (model),
-      spectrum (graph, link, [&p] { return p.getSampleRate(); }),
-      meter (link.outputMeter),
-      analyzerBar ([this] { return link.sidechainConnected.load(); }),
-      workflowBar (p.getHistory(), p.getABCompare(), p.getPresets(), p.getMidiLearn()),
-      outputBar (p.getState(), [&p] { return p.getAutoGainDb(); }),
-      midiLearnMenu (p.getParameterSet(), p.getMidiLearn()),
-      history (p.getHistory())
+      owner (p),
+      analyzerBar ([this] { return view != nullptr && view->link.sidechainConnected.load(); })
 {
     using namespace fabcutie;
 
-    model.setDynamicGainSource (&p.getDynamicGains());
-
-    addAndMakeVisible (graph);
-    addChildComponent (bandPanel);
-    addAndMakeVisible (meter);
     addAndMakeVisible (analyzerBar);
-    addAndMakeVisible (workflowBar);
-    addAndMakeVisible (outputBar);
-
-    graph.setBackgroundLayer (&spectrum);
-    graph.setPeakSource (&spectrum);
-    graph.setSoloTarget (&link.soloBand);
-    bandPanel.setSoloTarget (&link.soloBand);
-
-    ui::AnalyzerSettings analyzerSettings;
-    analyzerSettings.load (state.state);
-    analyzerBar.setSettings (analyzerSettings);
-    spectrum.setSettings (analyzerSettings);
     analyzerBar.onChange = [this] (const ui::AnalyzerSettings& s) { applyAnalyzerSettings (s); };
 
-    graph.setRangeDb ((float) state.state.getProperty (rangeDbId, 12.0f));
-    graph.onRangeChanged = [this] (float db) { state.state.setProperty (rangeDbId, db, nullptr); };
-    graph.onSelectionChanged = [this] { updateBandPanel(); };
-    graph.onBandsChanged = [this] { updateBandPanel(); };
-    graph.onEnterValues = [this] (int band) { ui::ValueEntry::show (*this, model, band); };
+    sketchButton.setClickingTogglesState (true);
+    sketchButton.setTooltip ("EQ Sketch: draw the curve you want on the graph and it becomes bands (Esc to stop)");
+    sketchButton.onClick = [this] { if (view != nullptr) view->graph.setSketchMode (sketchButton.getToggleState()); };
+    addAndMakeVisible (sketchButton);
 
-    workflowBar.onSizeChosen = [this] (int w, int h) { setSize (w, h); };
+    matchButton.setClickingTogglesState (true);
+    matchButton.setTooltip ("EQ Match: match the input's tonal balance to a reference");
+    matchButton.onClick = [this] { if (view != nullptr) view->matchPanel.setVisible (matchButton.getToggleState()); };
+    addAndMakeVisible (matchButton);
 
     outputGain.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, 18);
     outputGain.setTooltip ("Output gain");
@@ -72,71 +108,314 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     characterBox.setTooltip ("Character: Clean, or Gentle / Warm analog-style saturation (oversampled)");
     addAndMakeVisible (characterBox);
 
-    outputGainAttachment = std::make_unique<SliderAttachment> (state, params::id::outputGain, outputGain);
-    bypassAttachment     = std::make_unique<ButtonAttachment> (state, params::id::bypass, bypassButton);
-    characterAttachment  = std::make_unique<ComboBoxAttachment> (state, params::id::character, characterBox);
-
-    // Right-click MIDI learn on every knob and choice.
-    const auto fixed = [] (const char* id) { return [id] { return juce::String (id); }; };
-    midiLearnMenu.watch (outputGain, fixed (params::id::outputGain));
-    midiLearnMenu.watch (characterBox, fixed (params::id::character));
-    midiLearnMenu.watch (outputBar.getGainScaleSlider(), fixed (params::id::gainScale));
-
-    bandPanel.forEachControl ([this] (juce::Component& c, params::BandParam param)
+    instancesButton.setTooltip ("Instance list: every FabCutie in the session. Overlay their curves or edit them here.");
+    instancesButton.onClick = [this]
     {
-        midiLearnMenu.watch (c, [this, param]
-        {
-            const auto band = bandPanel.getBand();
-            return band >= 0 ? params::bandParamId (band, param) : juce::String();
-        });
-    });
+        instanceList.setVisible (! instanceList.isVisible());
+        refreshInstanceList();
+        resized();
+    };
+    addAndMakeVisible (instancesButton);
 
-    // After the children exist, so they all pick it up.
+    phaseBox.addItem ("Zero Latency", zeroLatencyItem);
+    phaseBox.addItem ("Natural Phase", naturalItem);
+    phaseBox.addSectionHeading ("Linear Phase");
+
+    const auto resolutions = params::linearResolutionNames();
+
+    for (int r = 0; r < resolutions.size(); ++r)
+        phaseBox.addItem ("Linear (" + resolutions[r] + ")", firstLinearItem + r);
+
+    phaseBox.onChange = [this] { choosePhase (phaseBox.getSelectedId()); };
+    addAndMakeVisible (phaseBox);
+
+    backButton.setTooltip ("Go back to this window's own instance");
+    backButton.onClick = [this] { setTarget (owner); };
+    addChildComponent (backButton);
+
+    instanceList.onEdit = [this] (int number)
+    {
+        if (auto* instance = findInstance (number))
+        {
+            shownInstances.erase (number);
+            setTarget (*instance);
+        }
+
+        instanceList.setVisible (false);
+    };
+    instanceList.onShowChanged = [this] (int number, bool shown)
+    {
+        if (shown) shownInstances.insert (number);
+        else       shownInstances.erase (number);
+
+        refreshInstanceList();
+        updateOverlays();
+    };
+    instanceList.onRename = [this] (int number, const juce::String& name)
+    {
+        if (auto* instance = findInstance (number))
+            instance->setCustomInstanceName (name);
+    };
+    instanceList.onClose = [this] { instanceList.setVisible (false); };
+    addChildComponent (instanceList);
+
+    // After the header controls exist, so they all pick it up.
     setLookAndFeel (&lookAndFeel);
 
+    setTarget (owner);
+    registry->addListener (this);
+    startTimerHz (15);
+
     setResizable (true, true);
-    setResizeLimits (800, 400, 2400, 1500);
-    setSize ((int) state.state.getProperty (editorWidthId, 960),
-             (int) state.state.getProperty (editorHeightId, 580));
+    setResizeLimits (900, 400, 2400, 1500);
+    setSize ((int) owner.getState().state.getProperty (editorWidthId, 1040),
+             (int) owner.getState().state.getProperty (editorHeightId, 600));
 }
 
 FabCutieAudioProcessorEditor::~FabCutieAudioProcessorEditor()
 {
-    // Solo is a listening aid: it never outlives the window.
-    link.soloBand.store (-1);
-    graph.setPeakSource (nullptr);
-    graph.setBackgroundLayer (nullptr);
+    registry->removeListener (this);
+    view.reset();
     setLookAndFeel (nullptr);
 }
 
-bool FabCutieAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+bool FabCutieAudioProcessorEditor::isEditingOther() const noexcept
 {
-    const auto cmd = juce::ModifierKeys::commandModifier;
+    return view != nullptr && &view->processor != &owner;
+}
 
-    if (key == juce::KeyPress ('z', cmd, 0))
+void FabCutieAudioProcessorEditor::setTarget (FabCutieAudioProcessor& target)
+{
+    using namespace fabcutie;
+
+    if (view != nullptr && &view->processor == &target)
+        return;
+
+    view.reset();
+    view = std::make_unique<View> (target);
+    auto& v = *view;
+
+    addAndMakeVisible (v.graph);
+    addChildComponent (v.bandPanel);
+    addAndMakeVisible (v.meter);
+    addChildComponent (v.matchPanel);
+    addAndMakeVisible (v.workflowBar);
+    addAndMakeVisible (v.outputBar);
+
+    v.workflowBar.onSizeChosen = [this] (int w, int h) { setSize (w, h); };
+    v.graph.onEnterValues = [this] (int band) { fabcutie::ui::ValueEntry::show (*this, view->model, band); };
+
+    // Right-click MIDI learn on every knob and choice.
+    const auto fixed = [] (const char* id) { return [id] { return juce::String (id); }; };
+    v.midiLearnMenu.watch (outputGain, fixed (params::id::outputGain));
+    v.midiLearnMenu.watch (characterBox, fixed (params::id::character));
+    v.midiLearnMenu.watch (v.outputBar.getGainScaleSlider(), fixed (params::id::gainScale));
+
+    v.bandPanel.forEachControl ([this, &v] (juce::Component& c, params::BandParam param)
     {
-        history.undo();
-        return true;
+        v.midiLearnMenu.watch (c, [&v, param]
+        {
+            const auto band = v.bandPanel.getBand();
+            return band >= 0 ? params::bandParamId (band, param) : juce::String();
+        });
+    });
+
+    // Sketch and Match start switched off on the newly edited instance.
+    sketchButton.setToggleState (false, juce::dontSendNotification);
+    matchButton.setToggleState (false, juce::dontSendNotification);
+    v.graph.onSketchModeChanged = [this] (bool on) { sketchButton.setToggleState (on, juce::dontSendNotification); };
+
+    v.graph.onRangeChanged = [this] (float db) { view->state.state.setProperty (rangeDbId, db, nullptr); };
+    v.graph.onSelectionChanged = [this] { updateBandPanel(); };
+    v.graph.onBandsChanged = [this] { updateBandPanel(); };
+
+    ui::AnalyzerSettings analyzerSettings;
+    analyzerSettings.load (v.state.state);
+    analyzerBar.setSettings (analyzerSettings);
+    v.spectrum.setSettings (analyzerSettings);
+
+    v.outputGainAttachment = std::make_unique<SliderAttachment> (v.state, params::id::outputGain, outputGain);
+    v.bypassAttachment     = std::make_unique<ButtonAttachment> (v.state, params::id::bypass, bypassButton);
+    v.characterAttachment  = std::make_unique<ComboBoxAttachment> (v.state, params::id::character, characterBox);
+    v.phaseModeAttachment  = std::make_unique<juce::ParameterAttachment> (*v.state.getParameter (params::id::phaseMode), [this] (float) { updatePhaseBox(); });
+    v.resolutionAttachment = std::make_unique<juce::ParameterAttachment> (*v.state.getParameter (params::id::linearResolution), [this] (float) { updatePhaseBox(); });
+    updatePhaseBox();
+
+    // New children pick up the window's look and feel.
+    sendLookAndFeelChange();
+
+    backButton.setVisible (isEditingOther());
+    instanceList.toFront (false);
+
+    timerCallback();
+    refreshInstanceList();
+    resized();
+    repaint();
+}
+
+FabCutieAudioProcessor* FabCutieAudioProcessorEditor::findInstance (int number) const
+{
+    for (auto* instance : registry->getInstances())
+        if (instance->getInstanceNumber() == number)
+            return instance;
+
+    return nullptr;
+}
+
+void FabCutieAudioProcessorEditor::refreshInstanceList()
+{
+    std::vector<fabcutie::ui::InstanceList::Row> rows;
+
+    for (auto* instance : registry->getInstances())
+    {
+        fabcutie::ui::InstanceList::Row row;
+        row.number = instance->getInstanceNumber();
+        row.name = instance->getInstanceName();
+        row.isOwn = instance == &owner;
+        row.isEditing = view != nullptr && instance == &view->processor;
+        row.shown = ! row.isEditing && shownInstances.count (row.number) > 0;
+        rows.push_back (row);
     }
 
-    if (key == juce::KeyPress ('z', cmd | juce::ModifierKeys::shiftModifier, 0) || key == juce::KeyPress ('y', cmd, 0))
+    instanceList.setRows (rows);
+
+    if (view != nullptr)
     {
-        history.redo();
-        return true;
+        const auto& target = view->processor;
+        instancesButton.setButtonText (target.getInstanceName() + juce::String (juce::CharPointer_UTF8 (" \xe2\x96\xbe")));
+        instancesButton.setColour (juce::TextButton::textColourOffId, fabcutie::ui::instanceColour (target.getInstanceNumber()));
     }
 
-    return false;
+    repaint();
+}
+
+void FabCutieAudioProcessorEditor::updateOverlays()
+{
+    if (view == nullptr)
+        return;
+
+    std::vector<fabcutie::ui::EqGraph::Overlay> overlays;
+
+    for (auto* instance : registry->getInstances())
+    {
+        const auto number = instance->getInstanceNumber();
+
+        if (instance == &view->processor || shownInstances.count (number) == 0)
+            continue;
+
+        overlays.push_back ({ instance->getInstanceName(), fabcutie::ui::instanceColour (number), instance->readBands() });
+    }
+
+    view->graph.setOverlays (std::move (overlays));
+}
+
+void FabCutieAudioProcessorEditor::instancesChanged()
+{
+    refreshInstanceList();
+    updateOverlays();
+}
+
+void FabCutieAudioProcessorEditor::instanceRemoved (FabCutieAudioProcessor& instance)
+{
+    shownInstances.erase (instance.getInstanceNumber());
+
+    if (view != nullptr && &view->processor == &instance && &instance != &owner)
+        setTarget (owner);
+}
+
+void FabCutieAudioProcessorEditor::timerCallback()
+{
+    updateOverlays();
+
+    if (view == nullptr)
+        return;
+
+    const auto surround = view->link.mainChannels.load() > 2;
+
+    if (surround != view->surround)
+    {
+        view->surround = surround;
+        view->graph.setSurround (surround);
+        view->bandPanel.setSurround (surround);
+        updatePhaseBox();
+    }
 }
 
 void FabCutieAudioProcessorEditor::applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings& s)
 {
-    s.save (state.state);
+    if (view == nullptr)
+        return;
+
+    s.save (view->state.state);
     analyzerBar.setSettings (s);
-    spectrum.setSettings (s);
+    view->spectrum.setSettings (s);
+}
+
+void FabCutieAudioProcessorEditor::updatePhaseBox()
+{
+    using namespace fabcutie;
+
+    if (view == nullptr)
+        return;
+
+    auto& state = view->state;
+
+    const auto mode = (dsp::PhaseMode) juce::jlimit (0, dsp::numPhaseModes - 1,
+                                                     juce::roundToInt (state.getRawParameterValue (params::id::phaseMode)->load()));
+    const auto resolution = juce::jlimit (0, dsp::numLinearResolutions - 1,
+                                          juce::roundToInt (state.getRawParameterValue (params::id::linearResolution)->load()));
+
+    const auto item = mode == dsp::PhaseMode::zeroLatency ? zeroLatencyItem
+                    : mode == dsp::PhaseMode::natural     ? naturalItem
+                                                          : firstLinearItem + resolution;
+    phaseBox.setSelectedId (item, juce::dontSendNotification);
+
+    // Surround always runs at zero latency (the FIR is stereo).
+    phaseBox.setEnabled (! view->surround);
+
+    if (view->surround)
+    {
+        view->graph.setPhaseMode (dsp::PhaseMode::zeroLatency);
+        phaseBox.setTooltip ("Phase: surround layouts always run at Zero Latency");
+        return;
+    }
+
+    view->graph.setPhaseMode (mode);
+
+    const auto sampleRate = view->processor.getSampleRate() > 0.0 ? view->processor.getSampleRate() : 48000.0;
+    const auto latencyMs = 1000.0 * dsp::PhaseStage::latencyFor (mode, resolution, sampleRate) / sampleRate;
+
+    phaseBox.setTooltip ("Phase: Zero Latency (minimum phase), Natural Phase (matches analog filters up to Nyquist) "
+                         "or Linear Phase (no phase shift; higher resolution is more accurate in the lows but adds latency). "
+                         "Current latency: " + juce::String (latencyMs, 1) + " ms");
+}
+
+void FabCutieAudioProcessorEditor::choosePhase (int itemId)
+{
+    using namespace fabcutie;
+
+    if (itemId <= 0 || view == nullptr)
+        return;
+
+    const auto mode = itemId == zeroLatencyItem ? dsp::PhaseMode::zeroLatency
+                    : itemId == naturalItem     ? dsp::PhaseMode::natural
+                                                : dsp::PhaseMode::linear;
+
+    if (mode == dsp::PhaseMode::linear)
+        view->resolutionAttachment->setValueAsCompleteGesture ((float) (itemId - firstLinearItem));
+
+    view->phaseModeAttachment->setValueAsCompleteGesture ((float) mode);
+    updatePhaseBox();
 }
 
 void FabCutieAudioProcessorEditor::updateBandPanel()
 {
+    if (view == nullptr)
+        return;
+
+    auto& graph = view->graph;
+    auto& bandPanel = view->bandPanel;
+
     const auto band = graph.getPrimaryBand();
     bandPanel.setBand (band);
     bandPanel.setVisible (band >= 0);
@@ -158,6 +437,43 @@ void FabCutieAudioProcessorEditor::updateBandPanel()
     bandPanel.setBounds (x, y, width, height);
 }
 
+void FabCutieAudioProcessorEditor::updateMatchPanel()
+{
+    if (view == nullptr)
+        return;
+
+    auto& graph = view->graph;
+    auto& matchPanel = view->matchPanel;
+
+    // Top right of the graph, clear of the range button.
+    const auto area = graph.getBounds().reduced (10, 0);
+    const auto width = juce::jmin (fabcutie::ui::MatchPanel::preferredWidth, area.getWidth());
+    matchPanel.setBounds (area.getRight() - width, area.getY() + 34, width, fabcutie::ui::MatchPanel::preferredHeight);
+}
+
+bool FabCutieAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (view == nullptr)
+        return false;
+
+    auto& history = view->processor.getHistory();
+    const auto cmd = juce::ModifierKeys::commandModifier;
+
+    if (key == juce::KeyPress ('z', cmd, 0))
+    {
+        history.undo();
+        return true;
+    }
+
+    if (key == juce::KeyPress ('z', cmd | juce::ModifierKeys::shiftModifier, 0) || key == juce::KeyPress ('y', cmd, 0))
+    {
+        history.redo();
+        return true;
+    }
+
+    return false;
+}
+
 void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
 {
     using namespace fabcutie::ui;
@@ -169,6 +485,10 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
     g.drawText ("FabCutie", header, juce::Justification::centredLeft);
 
+    // Carry the analyzer bar's top line on under the character and phase menus.
+    g.setColour (colours::panelOutline.withMultipliedAlpha (0.5f));
+    g.drawHorizontalLine (analyzerBar.getY(), (float) analyzerBar.getRight(), (float) getWidth());
+
     if (compactHeader)
         return;
 
@@ -179,31 +499,80 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (colours::textDim);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
-    g.drawText ("CHARACTER", characterBox.getBounds().translated (-76, 0).withWidth (72), juce::Justification::centredLeft);
+}
+
+void FabCutieAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
+{
+    // Frame the graph in the other instance's colour while editing it, so
+    // it is obvious this window is not showing its own instance.
+    if (! isEditingOther())
+        return;
+
+    const auto colour = fabcutie::ui::instanceColour (view->processor.getInstanceNumber());
+    const auto frame = view->graph.getBounds().toFloat().reduced (1.0f);
+    g.setColour (colour.withAlpha (0.8f));
+    g.drawRoundedRectangle (frame, 3.0f, 2.0f);
+
+    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    const auto label = "EDITING " + view->processor.getInstanceName().toUpperCase();
+    const auto labelArea = juce::Rectangle<float> (frame.getX() + 10.0f, frame.getY() + 6.0f, 260.0f, 16.0f);
+    g.drawText (label, labelArea, juce::Justification::centredLeft);
 }
 
 void FabCutieAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop (headerHeight).reduced (16, 6);
-    compactHeader = getWidth() < 1000;
+
+    // Narrow windows drop the version and the OUTPUT label to make room for
+    // the presets; the controls' tooltips still say what they are.
+    compactHeader = getWidth() < 1100;
 
     bypassButton.setBounds (header.removeFromRight (72).withSizeKeepingCentre (72, 24));
     header.removeFromRight (16);
     outputGain.setBounds (header.removeFromRight (100));
-    header.removeFromRight (compactHeader ? 8 : 66); // "OUTPUT" label
-    characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
-    header.removeFromRight (compactHeader ? 12 : 86); // "CHARACTER" label
-    header.removeFromLeft (compactHeader ? 104 : 140); // name and version
-    workflowBar.setBounds (header);
+    header.removeFromRight (compactHeader ? 16 : 66); // "OUTPUT" label
 
+    matchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
+    header.removeFromRight (6);
+    sketchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
+    header.removeFromRight (16);
+
+    // Title, instance list button (and Back while editing another
+    // instance), then undo, presets and A/B in what is left.
+    header.removeFromLeft (compactHeader ? 104 : 140);
+    auto instances = header.removeFromLeft (juce::jlimit (0, 160, header.getWidth() - 208));
+    instancesButton.setBounds (instances.withSizeKeepingCentre (instances.getWidth(), 24));
+    header.removeFromLeft (8);
+
+    if (backButton.isVisible())
+    {
+        backButton.setBounds (header.removeFromLeft (56).withSizeKeepingCentre (56, 24));
+        header.removeFromLeft (8);
+    }
+
+    instanceList.setBounds (instancesButton.getX(), headerHeight,
+                            juce::jmin (fabcutie::ui::InstanceList::preferredWidth, getWidth() - instancesButton.getX() - 8),
+                            instanceList.getPreferredHeight());
+
+    // Under the graph: the analyzer toggles, then character, phase mode and
+    // the output bar (gain scale, auto gain, phase invert) on the right.
     auto bottom = area.removeFromBottom (analyzerBarHeight);
-    outputBar.setBounds (bottom.removeFromRight (fabcutie::ui::OutputBar::preferredWidth));
+    auto outputArea = bottom.removeFromRight (juce::jlimit (0, fabcutie::ui::OutputBar::preferredWidth, bottom.getWidth() - 380 - 236));
+    phaseBox.setBounds (bottom.removeFromRight (128 + 8).withTrimmedRight (8).withSizeKeepingCentre (128, 24));
+    characterBox.setBounds (bottom.removeFromRight (92 + 8).withTrimmedRight (8).withSizeKeepingCentre (92, 24));
     analyzerBar.setBounds (bottom);
-    meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
-    graph.setBounds (area);
-    updateBandPanel();
 
-    state.state.setProperty (editorWidthId, getWidth(), nullptr);
-    state.state.setProperty (editorHeightId, getHeight(), nullptr);
+    if (view != nullptr)
+    {
+        view->workflowBar.setBounds (header);
+        view->outputBar.setBounds (outputArea);
+        view->meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
+        view->graph.setBounds (area);
+        updateBandPanel();
+        updateMatchPanel();
+    }
+
+    owner.getState().state.setProperty (editorWidthId, getWidth(), nullptr);
+    owner.getState().state.setProperty (editorHeightId, getHeight(), nullptr);
 }

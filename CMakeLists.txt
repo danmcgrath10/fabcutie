@@ -30,6 +30,14 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# ---------------------------------------------------------------------------
+# CLAP: JUCE 8 has no CLAP wrapper of its own, so clap-juce-extensions adds a
+# FabCutie_CLAP target next to the JUCE formats. Pinned to a known commit.
+# ---------------------------------------------------------------------------
+option(FABCUTIE_BUILD_CLAP "Build the CLAP plug-in (fetches clap-juce-extensions)" ON)
+set(FABCUTIE_CLAP_JUCE_EXTENSIONS_COMMIT "55525c9858d4b25687be7759a5e0f70eccef218e")
+set(FABCUTIE_CLAP_JUCE_EXTENSIONS_PATH "" CACHE PATH "Path to a local clap-juce-extensions checkout (optional)")
+
 # Copy the built plugin into the system plug-in folders (e.g. ~/Library/Audio/Plug-Ins/Components).
 option(FABCUTIE_COPY_AFTER_BUILD "Install the plugin into the user plug-in folders after building" OFF)
 
@@ -74,7 +82,9 @@ target_sources(FabCutie PRIVATE
     Source/ui/ValueEntry.cpp
     Source/workflow/ParameterSet.cpp
     Source/workflow/History.cpp
-    Source/workflow/Presets.cpp)
+    Source/workflow/Presets.cpp
+    Source/ui/InstanceList.cpp
+    Source/ui/MatchPanel.cpp)
 
 target_include_directories(FabCutie PRIVATE Source)
 
@@ -92,6 +102,25 @@ target_link_libraries(FabCutie
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+if(FABCUTIE_BUILD_CLAP)
+    if(FABCUTIE_CLAP_JUCE_EXTENSIONS_PATH)
+        add_subdirectory(${FABCUTIE_CLAP_JUCE_EXTENSIONS_PATH} clap-juce-extensions EXCLUDE_FROM_ALL)
+    else()
+        include(FetchContent)
+        FetchContent_Declare(clap-juce-extensions
+            GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+            GIT_TAG        ${FABCUTIE_CLAP_JUCE_EXTENSIONS_COMMIT}
+            GIT_SUBMODULES_RECURSE ON)
+        FetchContent_MakeAvailable(clap-juce-extensions)
+    endif()
+
+    clap_juce_extensions_plugin(TARGET FabCutie
+        CLAP_ID "io.github.danmcgrath10.fabcutie"
+        CLAP_FEATURES audio-effect equalizer stereo mono surround
+        CLAP_MANUAL_URL "https://github.com/danmcgrath10/fabcutie"
+        CLAP_SUPPORT_URL "https://github.com/danmcgrath10/fabcutie/issues")
+endif()
 
 # ---------------------------------------------------------------------------
 # Offline tests (run with ctest). They only need juce_audio_basics (juce_dsp
@@ -143,6 +172,19 @@ if(FABCUTIE_BUILD_TESTS)
 
     add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
 
+    juce_add_console_app(FabCutieSmartToolsTests PRODUCT_NAME "FabCutieSmartToolsTests")
+    target_sources(FabCutieSmartToolsTests PRIVATE Tests/SmartToolsTests.cpp)
+    target_include_directories(FabCutieSmartToolsTests PRIVATE Source)
+    target_compile_definitions(FabCutieSmartToolsTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieSmartToolsTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME SmartToolsTests COMMAND FabCutieSmartToolsTests)
+
     juce_add_console_app(FabCutieWorkflowTests PRODUCT_NAME "FabCutieWorkflowTests")
     target_sources(FabCutieWorkflowTests PRIVATE
         Tests/WorkflowTests.cpp
@@ -161,4 +203,17 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME WorkflowTests COMMAND FabCutieWorkflowTests)
+
+    juce_add_console_app(FabCutiePhaseTests PRODUCT_NAME "FabCutiePhaseTests")
+    target_sources(FabCutiePhaseTests PRIVATE Tests/PhaseModeTests.cpp)
+    target_include_directories(FabCutiePhaseTests PRIVATE Source)
+    target_compile_definitions(FabCutiePhaseTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutiePhaseTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME PhaseModeTests COMMAND FabCutiePhaseTests)
 endif()

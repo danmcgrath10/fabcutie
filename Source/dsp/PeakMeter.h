@@ -9,7 +9,7 @@ namespace fabcutie::dsp
     class PeakMeter
     {
     public:
-        static constexpr int maxChannels = 2;
+        static constexpr int maxChannels = 16; // up to 9.1.6
 
         // Audio thread.
         void process (const juce::AudioBuffer<float>& buffer, int numChannels) noexcept

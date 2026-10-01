@@ -8,8 +8,8 @@ namespace fabcutie::ui
 {
     // Compact controls for one band that float over the graph next to the
     // selected node: type, slope, placement, and frequency / gain / Q knobs,
-    // with the band's dynamics (threshold, range, attack, release and the
-    // sidechain settings) on a second row.
+    // with the band's dynamics (threshold, range, attack, release, the
+    // sidechain settings and the spectral switch) on a second row.
     class BandPanel final : public juce::Component,
                             private juce::Timer
     {
@@ -26,6 +26,9 @@ namespace fabcutie::ui
         // Calls back with every control that edits a band parameter, e.g. to
         // offer MIDI learn on them.
         void forEachControl (const std::function<void (juce::Component&, params::BandParam)>&);
+
+        // Relabels the placement choices for a surround bus.
+        void setSurround (bool surround);
 
         static constexpr int preferredWidth  = 420;
         static constexpr int preferredHeight = 222;
@@ -59,8 +62,8 @@ namespace fabcutie::ui
         juce::TextButton removeButton, soloButton;
         std::atomic<int>* soloTarget = nullptr;
 
-        juce::TextButton dynamicButton { "DYN" };
-        std::unique_ptr<ButtonAttachment> dynamicAttachment;
+        juce::TextButton dynamicButton { "DYN" }, spectralButton { "SPEC" };
+        std::unique_ptr<ButtonAttachment> dynamicAttachment, spectralAttachment;
         juce::ComboBox sourceBox, detectorFilterBox;
         std::unique_ptr<ComboBoxAttachment> sourceAttachment, detectorFilterAttachment;
         Knob threshold, range, attack, release;

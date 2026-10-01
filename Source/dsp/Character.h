@@ -49,7 +49,7 @@ namespace fabcutie::dsp
     class CharacterStage
     {
     public:
-        static constexpr int maxChannels = 2;
+        static constexpr int maxChannels = 16; // up to 9.1.6
         static constexpr int oversamplingStages = 2; // 2^2 = 4x
 
         void prepare (double sampleRate, int maxBlockSize, int numChannels)

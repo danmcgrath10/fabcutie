@@ -22,7 +22,7 @@ namespace fabcutie::ui
         std::function<void (int width, int height)> onSizeChosen;
 
         // Window sizes offered in the settings menu; the middle one is the default.
-        static constexpr std::array<std::pair<int, int>, 4> sizes { { { 800, 480 }, { 960, 580 }, { 1200, 725 }, { 1500, 900 } } };
+        static constexpr std::array<std::pair<int, int>, 4> sizes { { { 900, 520 }, { 1040, 600 }, { 1250, 720 }, { 1500, 865 } } };
 
         void paint (juce::Graphics&) override;
         void resized() override;

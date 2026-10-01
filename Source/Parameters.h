@@ -4,6 +4,7 @@
 
 #include "dsp/Character.h"
 #include "dsp/EqTypes.h"
+#include "dsp/PhaseModes.h"
 
 // Central place for every automatable parameter, so IDs stay stable across
 // versions and sessions saved in Logic keep loading.
@@ -16,7 +17,9 @@ namespace fabcutie::params
     inline constexpr int characterVersion = 3; // character mode
     inline constexpr int pianoRollVersion = 4; // piano roll display
     inline constexpr int dynamicsVersion = 5; // per-band dynamic EQ parameters
-    inline constexpr int workflowVersion = 5; // auto gain, gain scale, phase invert
+    inline constexpr int phaseVersion = 6; // phase mode and linear phase resolution
+    inline constexpr int spectralVersion = 7; // per-band spectral dynamics switch
+    inline constexpr int workflowVersion = 8; // auto gain, gain scale, phase invert
 
     namespace id
     {
@@ -24,6 +27,8 @@ namespace fabcutie::params
         inline constexpr auto bypass     = "bypass";
         inline constexpr auto character  = "character";
         inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
+        inline constexpr auto phaseMode  = "phaseMode";
+        inline constexpr auto linearResolution = "linearResolution"; // kernel length (and latency) in linear phase
         inline constexpr auto autoGain    = "autoGain";    // offset the output by the EQ's average gain change
         inline constexpr auto gainScale   = "gainScale";   // percent: scales every band's gain and dynamic range
         inline constexpr auto phaseInvert = "phaseInvert"; // flips the output polarity
@@ -57,10 +62,11 @@ namespace fabcutie::params
     enum class BandParam
     {
         enabled, type, frequency, gain, q, slope, placement,
-        dynamic, threshold, range, attack, release, detectorSource, detectorFilter
+        dynamic, threshold, range, attack, release, detectorSource, detectorFilter,
+        spectral
     };
 
-    inline constexpr int numBandParams = 14;
+    inline constexpr int numBandParams = 15;
 
     juce::String bandParamId (int bandIndex, BandParam param);
 
@@ -68,6 +74,8 @@ namespace fabcutie::params
     juce::StringArray slopeNames();
     juce::StringArray placementNames();
     juce::StringArray characterNames();
+    juce::StringArray phaseModeNames();
+    juce::StringArray linearResolutionNames();
     juce::StringArray detectorSourceNames();
     juce::StringArray detectorFilterNames();
 
@@ -102,6 +110,7 @@ namespace fabcutie::params
         std::atomic<float>* release = nullptr;
         std::atomic<float>* detectorSource = nullptr;
         std::atomic<float>* detectorFilter = nullptr;
+        std::atomic<float>* spectral = nullptr;
 
         void attach (juce::AudioProcessorValueTreeState& state, int bandIndex);
         dsp::BandSettings read() const noexcept;

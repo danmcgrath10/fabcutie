@@ -39,7 +39,18 @@ namespace fabcutie::ui
 
     SpectrumDisplay::~SpectrumDisplay()
     {
-        link.analyzerActive.store (false);
+        setActive (false);
+    }
+
+    void SpectrumDisplay::setActive (bool shouldBeActive)
+    {
+        // Several editors can show the same instance (instance list), so
+        // the audio thread fills the taps while any of them needs it.
+        if (shouldBeActive != active)
+        {
+            active = shouldBeActive;
+            link.analyzerUsers.fetch_add (active ? 1 : -1);
+        }
     }
 
     void SpectrumDisplay::setSettings (const AnalyzerSettings& newSettings)
@@ -50,7 +61,7 @@ namespace fabcutie::ui
         for (auto* trace : { &pre, &post, &external })
             trace->analyzer.setOrder (settings.getFftOrder());
 
-        link.analyzerActive.store (settings.anySpectrum());
+        setActive (settings.anySpectrum());
 
         if (wasFrozen && ! settings.freeze)
             resetClocks();

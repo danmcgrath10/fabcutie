@@ -53,6 +53,7 @@ namespace fabcutie::params
                 case BandParam::release:        return "release";
                 case BandParam::detectorSource: return "scsrc";
                 case BandParam::detectorFilter: return "scfilt";
+                case BandParam::spectral:       return "spec";
             }
 
             return "";
@@ -111,6 +112,18 @@ namespace fabcutie::params
         return { "Clean", "Gentle", "Warm" };
     }
 
+    juce::StringArray phaseModeNames()
+    {
+        return { "Zero Latency", "Natural Phase", "Linear Phase" };
+    }
+
+    juce::StringArray linearResolutionNames()
+    {
+        juce::StringArray names { "Low", "Medium", "High", "Very High", "Maximum" };
+        jassert (names.size() == dsp::numLinearResolutions);
+        return names;
+    }
+
     juce::StringArray detectorSourceNames()
     {
         return { "Internal", "External" };
@@ -152,6 +165,21 @@ namespace fabcutie::params
             "Piano Roll",
             false,
             juce::AudioParameterBoolAttributes().withAutomatable (false)));
+
+        // Not automatable: both change the latency the host compensates for.
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::phaseMode, phaseVersion },
+            "Phase Mode",
+            phaseModeNames(),
+            (int) dsp::PhaseMode::zeroLatency,
+            juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::linearResolution, phaseVersion },
+            "Linear Phase Resolution",
+            linearResolutionNames(),
+            dsp::defaultLinearResolution,
+            juce::AudioParameterChoiceAttributes().withAutomatable (false)));
 
         layout.add (std::make_unique<juce::AudioParameterBool> (
             juce::ParameterID { id::autoGain, workflowVersion },
@@ -262,6 +290,10 @@ namespace fabcutie::params
                 juce::ParameterID { bandParamId (b, BandParam::detectorFilter), dynamicsVersion },
                 name + "Sidechain Filter", detectorFilterNames(), (int) dyn.filter));
 
+            group->addChild (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { bandParamId (b, BandParam::spectral), spectralVersion },
+                name + "Spectral", dyn.spectral));
+
             layout.add (std::move (group));
         }
 
@@ -291,6 +323,7 @@ namespace fabcutie::params
         release   = get (BandParam::release);
         detectorSource = get (BandParam::detectorSource);
         detectorFilter = get (BandParam::detectorFilter);
+        spectral  = get (BandParam::spectral);
     }
 
     dsp::BandSettings BandParameterRefs::read() const noexcept
@@ -312,6 +345,7 @@ namespace fabcutie::params
         d.releaseMs   = release->load();
         d.source      = (dsp::DetectorSource) juce::jlimit (0, dsp::numDetectorSources - 1, juce::roundToInt (detectorSource->load()));
         d.filter      = (dsp::DetectorFilter) juce::jlimit (0, dsp::numDetectorFilters - 1, juce::roundToInt (detectorFilter->load()));
+        d.spectral    = spectral->load() >= 0.5f;
         return s;
     }
 }
