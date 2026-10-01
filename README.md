@@ -13,6 +13,8 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Per-band placement: Stereo, Left, Right, Mid or Side.
 - Frequency 10 Hz to 30 kHz, gain ±30 dB, Q 0.025 to 40.
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
+- Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
+- Sidechain per dynamic band: listen to the band's own input or the plugin's external sidechain input, filtered to the band's region (band pass for bells, low or high pass for shelves) or wide open.
 - Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 
 ## Using the graph
@@ -29,14 +31,18 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 | Delete / Backspace | Remove the selected bands |
 | `±12 dB` button (top right) | Cycle the display range: ±3, ±6, ±12, ±30 dB |
 
-The selected band's panel floats over the graph: type, slope, placement and frequency/gain/Q knobs (double-click a knob to reset it). Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
+The selected band's panel floats over the graph: type, slope, placement and frequency/gain/Q knobs (double-click a knob to reset it), with the dynamics controls on a second row.
+
+### External sidechain in Logic Pro
+
+FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the **Side Chain** menu in the plugin window's header, then set a dynamic band's source to **External**. Bands left on **Internal** keep listening to their own input. With no sidechain selected, external bands hear silence and stay at their static gain. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
 
 ## Roadmap
 
 1. **Plugin skeleton** (done): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
 2. **EQ engine** (done): up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
 3. **Interface:** interactive frequency graph with draggable nodes and a floating band panel (done); real-time spectrum analyzer behind the curve, then polish.
-4. **Advanced:** dynamic EQ per band, linear-phase mode, analyzer collision display.
+4. **Advanced:** dynamic EQ per band with external sidechain (done), linear-phase mode, analyzer collision display.
 
 ## Download a build
 
