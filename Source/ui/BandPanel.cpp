@@ -51,6 +51,18 @@ namespace fabcutie::ui
         };
         addAndMakeVisible (removeButton);
 
+        soloButton.setButtonText ("Solo");
+        soloButton.setTooltip ("Listen to just the part of the spectrum this band works on");
+        soloButton.setClickingTogglesState (true);
+        soloButton.setColour (juce::TextButton::buttonOnColourId, colours::solo);
+        soloButton.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+        soloButton.onClick = [this]
+        {
+            if (soloTarget != nullptr && band >= 0)
+                soloTarget->store (soloButton.getToggleState() ? band : -1);
+        };
+        addAndMakeVisible (soloButton);
+
         startTimerHz (15);
     }
 
@@ -110,6 +122,7 @@ namespace fabcutie::ui
         }
 
         updateEnablement();
+        timerCallback();
         repaint();
     }
 
@@ -117,6 +130,8 @@ namespace fabcutie::ui
     {
         updateEnablement();
 
+        const auto soloed = soloTarget != nullptr && band >= 0 && soloTarget->load() == band;
+        soloButton.setToggleState (soloed, juce::dontSendNotification);
         // Keep the live dynamic gain readout in the header current.
         const auto dynamicGain = band >= 0 ? model.getDynamicGainDb (band) : 0.0f;
         if (std::abs (dynamicGain - shownDynamicGainDb) >= 0.05f)
@@ -205,6 +220,8 @@ namespace fabcutie::ui
 
         auto header = area.removeFromTop (22);
         removeButton.setBounds (header.removeFromRight (24));
+        header.removeFromRight (6);
+        soloButton.setBounds (header.removeFromRight (48).reduced (0, 1));
 
         area.removeFromTop (6);
 

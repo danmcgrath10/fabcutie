@@ -20,6 +20,16 @@ namespace fabcutie::ui
         inline const juce::Colour control      { 0xff2a2e38 };
         inline const juce::Colour accent       { 0xffff7aa8 };
         inline const juce::Colour curve        { 0xfff4f5f8 };
+
+        // Analyzer and meter
+        inline const juce::Colour spectrumPre      { 0xff8b93a8 };
+        inline const juce::Colour spectrumPost     { 0xff58a6ff };
+        inline const juce::Colour spectrumExternal { 0xffffb454 };
+        inline const juce::Colour collision        { 0xffff4057 };
+        inline const juce::Colour meterLow         { 0xff3fcf8e };
+        inline const juce::Colour meterMid         { 0xffe8d44d };
+        inline const juce::Colour meterHigh        { 0xffff5a5a };
+        inline const juce::Colour solo             { 0xfff5c542 };
     }
 
     // Each band gets its own hue, stepped round the colour wheel by the golden

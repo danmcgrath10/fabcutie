@@ -2,15 +2,20 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "ui/AnalyzerBar.h"
 #include "ui/BandPanel.h"
 #include "ui/EqGraph.h"
 #include "ui/EqModel.h"
+#include "ui/LevelMeter.h"
+#include "ui/SpectrumDisplay.h"
 #include "ui/Theme.h"
 
 class FabCutieAudioProcessor;
 
 // The main window: a header with output gain and bypass, the frequency graph
-// filling the rest, and a band panel that floats next to the selected node.
+// with the spectrum analyzer behind it and the output meter beside it, the
+// analyzer bar underneath, and a band panel that floats next to the selected
+// node.
 class FabCutieAudioProcessorEditor final : public juce::AudioProcessorEditor
 {
 public:
@@ -26,13 +31,18 @@ private:
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     void updateBandPanel();
+    void applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings&);
 
     fabcutie::ui::LookAndFeel lookAndFeel;
     juce::AudioProcessorValueTreeState& state;
+    fabcutie::dsp::EditorLink& link;
     fabcutie::ui::EqModel model;
 
     fabcutie::ui::EqGraph graph;
     fabcutie::ui::BandPanel bandPanel;
+    fabcutie::ui::SpectrumDisplay spectrum;
+    fabcutie::ui::LevelMeter meter;
+    fabcutie::ui::AnalyzerBar analyzerBar;
 
     juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
     juce::TextButton bypassButton { "Bypass" };

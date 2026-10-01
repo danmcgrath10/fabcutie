@@ -19,4 +19,9 @@ Audio-thread code lives here, independent of the UI.
 - `Character.h`: global Clean/Gentle/Warm saturation after the bands, run at 4x oversampling
   so its harmonics don't alias. Unity gain for quiet signals; Clean is a bit-exact bypass.
 - `OutputStage.h`: smoothed output gain and bypass.
+- `AudioTap.h`: lock-free mono feed from the audio thread to the analyzer.
+- `SpectrumAnalyzer.h`: FFT, windowing and smoothing for the analyzer (runs on the message thread).
+- `PeakMeter.h`: per-channel peak capture for the output meter.
+- `BandSolo.h`: intelligent solo, auditions the region a band works on.
+- `EditorLink.h`: the taps, meter, sidechain flag and solo band shared with the editor.
 - Planned: linear-phase mode.

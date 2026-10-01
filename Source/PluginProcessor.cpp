@@ -31,6 +31,18 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     }
 }
 
+void FabCutieAudioProcessor::pushSoloSettings() noexcept
+{
+    // Only an enabled band can be soloed, and bypass switches solo off too.
+    const auto band = editorLink.soloBand.load();
+    fabcutie::dsp::BandSettings settings;
+
+    if (band >= 0 && band < fabcutie::dsp::maxBands && bypass->load() < 0.5f)
+        settings = bandParams[(size_t) band].read();
+
+    solo.setBand (settings);
+}
+
 void FabCutieAudioProcessor::pushCharacterMode() noexcept
 {
     // Bypass fades the character out along with the bands.
@@ -46,6 +58,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushBandSettings();
     eq.prepare (sampleRate);
+
+    pushSoloSettings();
+    solo.prepare (sampleRate);
 
     pushCharacterMode();
     characterStage.prepare (sampleRate, samplesPerBlock, getTotalNumOutputChannels());
@@ -84,13 +99,27 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
-    auto main = getBusBuffer (buffer, true, 0);
+    // The main bus is processed in place; the sidechain feeds the analyzer and
+    // dynamic bands set to an external source.
+    auto main = getBusBuffer (buffer, false, 0);
+    const auto numChannels = main.getNumChannels();
+    const auto numSamples = main.getNumSamples();
 
-    // The sidechain feeds dynamic bands set to an external source.
-    const auto* sidechainBus = getBus (true, 1);
+    auto* sidechainBus = getBus (true, 1);
     const auto hasSidechain = sidechainBus != nullptr && sidechainBus->isEnabled()
-                              && sidechainBus->getNumberOfChannels() > 0;
+                           && sidechainBus->getNumberOfChannels() > 0;
     const auto sidechain = hasSidechain ? getBusBuffer (buffer, true, 1) : juce::AudioBuffer<float>();
+    editorLink.sidechainConnected.store (hasSidechain, std::memory_order_relaxed);
+
+    const auto analyze = editorLink.analyzerActive.load (std::memory_order_relaxed);
+
+    if (analyze)
+    {
+        editorLink.pre.push (main.getArrayOfReadPointers(), numChannels, numSamples);
+
+        if (hasSidechain)
+            editorLink.external.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
+    }
 
     pushBandSettings();
     eq.process (main, hasSidechain ? &sidechain : nullptr);
@@ -103,6 +132,14 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.process (main);
+
+    pushSoloSettings();
+    solo.process (main, numChannels);
+
+    editorLink.outputMeter.process (main, numChannels);
+
+    if (analyze)
+        editorLink.post.push (main.getArrayOfReadPointers(), numChannels, numSamples);
 }
 
 juce::AudioProcessorEditor* FabCutieAudioProcessor::createEditor()

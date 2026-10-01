@@ -4,7 +4,7 @@ An open-source parametric EQ plugin for macOS and Windows (AU, VST3 and Standalo
 
 FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q 3. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
 
-> **Status:** the EQ engine and the draw-on-the-graph interface work. The real-time spectrum analyzer is next.
+> **Status:** the EQ engine, the draw-on-the-graph interface and the real-time spectrum analyzer work. Workflow features (undo, A/B, presets) are next.
 
 ## What it does
 
@@ -16,6 +16,11 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
 - Sidechain per dynamic band: listen to the band's own input or the plugin's external sidechain input, filtered to the band's region (band pass for bells, low or high pass for shelves) or wide open.
 - Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
+- Real-time spectrum analyzer behind the curves: input (Pre), output (Post) and sidechain spectra, with adjustable range, speed, tilt and resolution, and Freeze.
+- Collision detection: red shading where the output and the sidechain signal crowd the same frequencies.
+- Spectrum grab: hover a peak in the spectrum, click it and drag to cut (or boost) it right away.
+- Intelligent band solo: hear only the part of the spectrum a band works on.
+- Output level meter with peak hold and a resettable peak readout.
 
 ## Using the graph
 
@@ -30,19 +35,36 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 | Right-click empty space | Add a band, display range, remove all |
 | Delete / Backspace | Remove the selected bands |
 | `±12 dB` button (top right) | Cycle the display range: ±3, ±6, ±12, ±30 dB |
+| Hover a spectrum peak, then click and drag | Spectrum grab: adds a bell on the peak and drags it |
+| Alt/Option-click a node and hold | Solo the band while the mouse is down |
 
-The selected band's panel floats over the graph: type, slope, placement and frequency/gain/Q knobs (double-click a knob to reset it), with the dynamics controls on a second row.
+The selected band's panel floats over the graph: type, slope, placement, frequency/gain/Q knobs (double-click a knob to reset it) and a Solo button, with the dynamics controls on a second row. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
 
 ### External sidechain in Logic Pro
 
-FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the **Side Chain** menu in the plugin window's header, then set a dynamic band's source to **External**. Bands left on **Internal** keep listening to their own input. With no sidechain selected, external bands hear silence and stay at their static gain. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
+FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the **Side Chain** menu in the plugin window's header, then set a dynamic band's source to **External**. Bands left on **Internal** keep listening to their own input. With no sidechain selected, external bands hear silence and stay at their static gain. The same input feeds the analyzer's sidechain spectrum.
 
 ## Roadmap
 
 1. **Plugin skeleton** (done): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
 2. **EQ engine** (done): up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
-3. **Interface:** interactive frequency graph with draggable nodes and a floating band panel (done); real-time spectrum analyzer behind the curve, then polish.
-4. **Advanced:** dynamic EQ per band with external sidechain (done), linear-phase mode, analyzer collision display.
+3. **Interface** (done): interactive frequency graph with draggable nodes and a floating band panel.
+4. **Analyzer** (done): pre/post/sidechain spectrum, range, speed, tilt, resolution, freeze, spectrum grab, collision detection, band solo, output meter.
+5. **Workflow:** undo/redo, A/B, presets, copy and paste of bands, value entry, auto gain, gain scale, phase invert, MIDI learn.
+6. **Filter extras** (done): All Pass and Flat Tilt shapes, brickwall slope, piano roll.
+7. **Dynamic EQ** with sidechain (done) and character modes (done), then phase modes (linear and natural phase), EQ Sketch/Match and spectral dynamics.
+
+## The analyzer
+
+The strip under the graph switches the **Pre** (input), **Post** (output) and **Sidechain** spectra on and off, and **Freeze** holds the display. The **Analyzer** menu sets:
+
+- **Range:** 60, 90 or 120 dB from the top of the graph to the bottom.
+- **Speed:** how quickly the spectrum falls back, from Very slow to Very fast.
+- **Tilt:** 0 to 6 dB/oct around 1 kHz. At 4.5 dB/oct pink noise, and most mixes, look level.
+- **Resolution:** 2048 to 16384-point FFT. Higher shows more low-end detail but reacts more slowly.
+- **Show collisions with sidechain** and **Spectrum grab**.
+
+These settings are saved with the session. To feed the sidechain in Logic Pro, pick a track or bus in the **Side Chain** menu at the top of the plugin window.
 
 ## Download a build
 
@@ -110,10 +132,10 @@ Copy `FabCutie.vst3` to `~/Library/Audio/Plug-Ins/VST3/` on macOS or `C:\Program
 CMakeLists.txt          JUCE fetch + plugin target
 Source/
   PluginProcessor.*     audio processor, state save/restore
-  PluginEditor.*        editor window (temporary band editor for now)
+  PluginEditor.*        editor window
   Parameters.*          every automatable parameter, with stable IDs
   dsp/                  audio-thread code: EQ engine, filter design, output stage
-  ui/                   editor components (frequency graph, analyzer)
+  ui/                   editor components (frequency graph, analyzer, meter)
 Tests/                  offline EQ engine tests (ctest)
 .github/workflows/      macOS + Windows CI, runs auval
 ```

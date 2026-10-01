@@ -5,6 +5,8 @@
 namespace
 {
     constexpr int headerHeight = 44;
+    constexpr int analyzerBarHeight = 32;
+    constexpr int meterWidth = 52;
 
     // Editor settings saved with the session, next to the parameters.
     const juce::Identifier editorWidthId  { "editorWidth" };
@@ -15,9 +17,13 @@ namespace
 FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcessor& p)
     : AudioProcessorEditor (&p),
       state (p.getState()),
+      link (p.getEditorLink()),
       model (state),
       graph (model, [&p] { return p.getSampleRate(); }),
-      bandPanel (model)
+      bandPanel (model),
+      spectrum (graph, link, [&p] { return p.getSampleRate(); }),
+      meter (link.outputMeter),
+      analyzerBar ([this] { return link.sidechainConnected.load(); })
 {
     using namespace fabcutie;
 
@@ -25,6 +31,19 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
 
     addAndMakeVisible (graph);
     addChildComponent (bandPanel);
+    addAndMakeVisible (meter);
+    addAndMakeVisible (analyzerBar);
+
+    graph.setBackgroundLayer (&spectrum);
+    graph.setPeakSource (&spectrum);
+    graph.setSoloTarget (&link.soloBand);
+    bandPanel.setSoloTarget (&link.soloBand);
+
+    ui::AnalyzerSettings analyzerSettings;
+    analyzerSettings.load (state.state);
+    analyzerBar.setSettings (analyzerSettings);
+    spectrum.setSettings (analyzerSettings);
+    analyzerBar.onChange = [this] (const ui::AnalyzerSettings& s) { applyAnalyzerSettings (s); };
 
     graph.setRangeDb ((float) state.state.getProperty (rangeDbId, 12.0f));
     graph.onRangeChanged = [this] (float db) { state.state.setProperty (rangeDbId, db, nullptr); };
@@ -58,7 +77,18 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
 
 FabCutieAudioProcessorEditor::~FabCutieAudioProcessorEditor()
 {
+    // Solo is a listening aid: it never outlives the window.
+    link.soloBand.store (-1);
+    graph.setPeakSource (nullptr);
+    graph.setBackgroundLayer (nullptr);
     setLookAndFeel (nullptr);
+}
+
+void FabCutieAudioProcessorEditor::applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings& s)
+{
+    s.save (state.state);
+    analyzerBar.setSettings (s);
+    spectrum.setSettings (s);
 }
 
 void FabCutieAudioProcessorEditor::updateBandPanel()
@@ -116,6 +146,8 @@ void FabCutieAudioProcessorEditor::resized()
     header.removeFromRight (66); // "OUTPUT" label
     characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
 
+    analyzerBar.setBounds (area.removeFromBottom (analyzerBarHeight));
+    meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
     graph.setBounds (area);
     updateBandPanel();
 

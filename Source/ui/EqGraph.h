@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <optional>
 
 #include "EqModel.h"
 #include "GraphGeometry.h"
@@ -20,19 +21,42 @@ namespace fabcutie::ui
     //   drag empty space           lasso-select nodes
     //   right-click                band or graph menu
     //   Delete / Backspace         remove the selected bands
+    //   Alt/Option-click a node    solo the band while the mouse is held
+    //   click a spectrum peak      add a bell there and drag it (spectrum grab)
     //
     // With the piano roll on (graph menu), a keyboard runs along the bottom
     // and dragged or added bands snap to the nearest note.
     //
-    // Painting is layered so the spectrum analyzer can slot in later: paint()
-    // draws the background and grid, child components (setBackgroundLayer)
-    // draw above that, and paintOverChildren() draws the curves and nodes.
+    // Painting is layered: paint() draws the background and grid, child
+    // components (setBackgroundLayer, e.g. the spectrum analyzer) draw above
+    // that, and paintOverChildren() draws the curves and nodes.
     class EqGraph final : public juce::Component,
                           private juce::Timer
     {
     public:
         EqGraph (EqModel&, std::function<double()> sampleRateSource);
         ~EqGraph() override;
+
+        // Offers peaks of the analyzer's spectrum to grab with the mouse.
+        class PeakSource
+        {
+        public:
+            virtual ~PeakSource() = default;
+
+            // The peak to grab near a mouse position, in graph coordinates.
+            virtual std::optional<juce::Point<float>> findPeakNear (juce::Point<float>) = 0;
+
+            // Shows (or, with nullopt, hides) the peak the mouse would grab.
+            virtual void setHighlightedPeak (std::optional<juce::Point<float>>) = 0;
+        };
+
+        void setPeakSource (PeakSource* source) noexcept { peakSource = source; }
+
+        // Where the soloed band is kept (shared with the audio thread).
+        void setSoloTarget (std::atomic<int>* target) noexcept { soloTarget = target; }
+
+        const GraphGeometry& getGeometry() const noexcept { return geometry; }
+        juce::Rectangle<float> getPlotArea() const noexcept { return plot; }
 
         // Adds a component that is drawn behind the curves and ignores the
         // mouse, e.g. a spectrum analyzer. Pass nullptr to remove it.
@@ -78,6 +102,9 @@ namespace fabcutie::ui
         };
 
         void timerCallback() override;
+        int getSoloBand() const noexcept;
+        void setSoloBand (int band);
+        void updateGrabPeak (std::optional<juce::Point<float>> mouse);
         void refresh (bool force);
         void recomputeCurves();
 
@@ -103,12 +130,21 @@ namespace fabcutie::ui
         void drawNodes (juce::Graphics&);
         void drawReadout (juce::Graphics&, int band);
         void drawRangeButton (juce::Graphics&);
+        void drawSoloBanner (juce::Graphics&);
         void drawPianoRoll (juce::Graphics&);
         float snapFrequency (float hz) const;
 
         EqModel& model;
         std::function<double()> sampleRateSource;
         juce::Component* backgroundLayer = nullptr;
+        PeakSource* peakSource = nullptr;
+        std::atomic<int>* soloTarget = nullptr;
+
+        std::optional<juce::Point<float>> grabPeak;
+        juce::uint32 lastGrabTime = 0;
+        int lastSolo = -1;
+        int soloBeforeHold = -1;
+        bool soloHeld = false;
 
         GraphGeometry geometry;
         juce::Rectangle<float> plot, rangeButton;

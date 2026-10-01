@@ -118,6 +118,42 @@ namespace fabcutie::ui
     void EqGraph::timerCallback()
     {
         refresh (false);
+
+        if (const auto solo = getSoloBand(); solo != lastSolo)
+        {
+            lastSolo = solo;
+            repaint();
+        }
+    }
+
+    int EqGraph::getSoloBand() const noexcept
+    {
+        return soloTarget != nullptr ? soloTarget->load() : -1;
+    }
+
+    void EqGraph::setSoloBand (int band)
+    {
+        if (soloTarget != nullptr)
+            soloTarget->store (band);
+
+        lastSolo = band;
+        repaint();
+    }
+
+    void EqGraph::updateGrabPeak (std::optional<juce::Point<float>> mouse)
+    {
+        std::optional<juce::Point<float>> peak;
+
+        if (mouse.has_value() && peakSource != nullptr && plot.contains (*mouse) && model.findFreeBand() >= 0)
+            peak = peakSource->findPeakNear (*mouse);
+
+        if (peak == grabPeak)
+            return;
+
+        grabPeak = peak;
+
+        if (peakSource != nullptr)
+            peakSource->setHighlightedPeak (grabPeak);
     }
 
     void EqGraph::refresh (bool force)
@@ -155,6 +191,9 @@ namespace fabcutie::ui
 
         if (hovered >= 0 && ! bands[(size_t) hovered].enabled)
             hovered = -1;
+
+        if (const auto solo = getSoloBand(); solo >= 0 && ! bands[(size_t) solo].enabled)
+            setSoloBand (-1);
 
         repaint();
 
@@ -284,12 +323,17 @@ namespace fabcutie::ui
             repaint();
         }
 
-        setMouseCursor (band >= 0 || rangeButton.contains (e.position) ? juce::MouseCursor::PointingHandCursor
-                                                                       : juce::MouseCursor::NormalCursor);
+        const auto overButton = rangeButton.contains (e.position);
+        updateGrabPeak (band < 0 && ! overButton ? std::optional (e.position) : std::nullopt);
+
+        setMouseCursor (band >= 0 || overButton || grabPeak.has_value() ? juce::MouseCursor::PointingHandCursor
+                                                                        : juce::MouseCursor::NormalCursor);
     }
 
     void EqGraph::mouseExit (const juce::MouseEvent&)
     {
+        updateGrabPeak (std::nullopt);
+
         if (hovered >= 0)
         {
             hovered = -1;
@@ -330,8 +374,40 @@ namespace fabcutie::ui
             return;
         }
 
+        if (band < 0 && grabPeak.has_value())
+        {
+            // Spectrum grab: put a bell on the peak and drag it straight away.
+            const auto peak = *grabPeak;
+            updateGrabPeak (std::nullopt);
+
+            const auto newBand = model.findFreeBand();
+            if (newBand >= 0)
+            {
+                const auto hz = juce::jlimit (params::range::freqMinHz, params::range::freqMaxHz, geometry.frequencyForX (peak.x));
+                model.addBand (newBand, dsp::FilterType::bell, hz, 0.0f);
+                refresh (false);
+                selectOnly (newBand);
+
+                dragMode = DragMode::nodes;
+                dragStarted = false;
+                dragBand = newBand;
+                dragAnchor = dragVirtual = getNodePosition (newBand);
+                lastMouse = e.position;
+                lastGrabTime = juce::Time::getMillisecondCounter();
+                return;
+            }
+        }
+
         if (band >= 0)
         {
+            if (e.mods.isAltDown())
+            {
+                // Solo while the mouse is held, so a node can be swept by ear.
+                soloBeforeHold = getSoloBand();
+                soloHeld = true;
+                setSoloBand (band);
+            }
+
             if (toggle && isSelected (band))
             {
                 auto reduced = selection;
@@ -395,6 +471,12 @@ namespace fabcutie::ui
         if (dragMode == DragMode::nodes && dragStarted)
             endNodeDrag();
 
+        if (soloHeld)
+        {
+            soloHeld = false;
+            setSoloBand (soloBeforeHold);
+        }
+
         if (dragMode == DragMode::lasso)
         {
             if (lasso.isEmpty() && ! e.mouseWasDraggedSinceMouseDown() && selectionBeforeLasso.isEmpty())
@@ -413,6 +495,11 @@ namespace fabcutie::ui
             return;
 
         const auto band = nodeAt (e.position);
+
+        // The second click of a double-click on a spectrum peak lands on the
+        // band the first click just grabbed; keep it.
+        if (band >= 0 && juce::Time::getMillisecondCounter() - lastGrabTime < 600)
+            return;
 
         if (band >= 0)
             removeBands ({ band });
@@ -703,6 +790,7 @@ namespace fabcutie::ui
         }
 
         drawRangeButton (g);
+        drawSoloBanner (g);
 
         bool anyEnabled = false;
         for (const auto& s : bands)
@@ -877,6 +965,12 @@ namespace fabcutie::ui
                 g.fillEllipse (circle.expanded (5.0f));
             }
 
+            if (b == lastSolo)
+            {
+                g.setColour (colours::solo);
+                g.drawEllipse (circle.expanded (4.0f), 2.0f);
+            }
+
             g.setColour (selected ? colour : colour.withMultipliedSaturation (0.8f).darker (0.15f));
             g.fillEllipse (circle);
 
@@ -921,6 +1015,19 @@ namespace fabcutie::ui
         g.setColour (colours::text);
         g.setFont (font);
         g.drawText (text, box, juce::Justification::centred);
+    }
+
+    void EqGraph::drawSoloBanner (juce::Graphics& g)
+    {
+        if (lastSolo < 0)
+            return;
+
+        const auto box = juce::Rectangle<float> (plot.getX() + 8.0f, 6.0f, 96.0f, 20.0f);
+        g.setColour (colours::solo.withAlpha (0.9f));
+        g.fillRoundedRectangle (box, 4.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.85f));
+        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        g.drawText ("SOLO  Band " + juce::String (lastSolo + 1), box, juce::Justification::centred);
     }
 
     float EqGraph::snapFrequency (float hz) const
