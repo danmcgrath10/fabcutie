@@ -21,6 +21,11 @@ Audio-thread code lives here, independent of the UI.
   16 channels; no discrete or ambisonic sets).
 - `Character.h`: global Clean/Gentle/Warm saturation after the bands, run at 4x oversampling
   so its harmonics don't alias. Unity gain for quiet signals; Clean is a bit-exact bypass.
+- `SpectralDynamics.h`: spectral dynamics: a 2048-point STFT (75% overlap, square-root Hann,
+  exact rebuild) that gives every bin inside a spectral band its own gain offset. Runs
+  after `EqEngine`; adds 2048 samples of latency while any band uses it.
+- `CurveFit.h`: fits bells and shelves to a target curve (EQ Sketch, EQ Match).
+- `SpectrumMatch.h`: long-term average spectrum and the match curve between two of them.
 - `OutputStage.h`: smoothed output gain and bypass.
 - `AudioTap.h`: lock-free mono feed from the audio thread to the analyzer.
 - `SpectrumAnalyzer.h`: FFT, windowing and smoothing for the analyzer (runs on the message thread).
@@ -28,4 +33,7 @@ Audio-thread code lives here, independent of the UI.
 - `BandSolo.h`: intelligent solo, auditions the region a band works on.
 - `EditorLink.h`: the taps, meter, sidechain flag, main channel count and solo band shared with
   the editor. The taps fill while any editor (its own, or another instance's) shows the analyzer.
-- Planned: linear-phase mode.
+- `PhaseModes.h`: Natural and Linear Phase. Designs one FIR kernel for all static bands from the
+  analog prototypes (a 2 x 2 matrix of kernels when mid/side bands mix left and right), runs it with
+  uniformly partitioned FFT convolution, designs new kernels on a background thread (inline when
+  rendering offline) and crossfades them in, and delays the sidechain to match the latency.

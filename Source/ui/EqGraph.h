@@ -27,6 +27,10 @@ namespace fabcutie::ui
     // With the piano roll on (graph menu), a keyboard runs along the bottom
     // and dragged or added bands snap to the nearest note.
     //
+    // In sketch mode (EQ Sketch), dragging draws the curve you want instead;
+    // on release it is turned into bands in the free slots. Escape leaves
+    // sketch mode.
+    //
     // Painting is layered: paint() draws the background and grid, child
     // components (setBackgroundLayer, e.g. the spectrum analyzer) draw above
     // that, and paintOverChildren() draws the curves and nodes.
@@ -76,6 +80,17 @@ namespace fabcutie::ui
         // Names placements by speaker side (surround) instead of mid/side.
         void setSurround (bool);
 
+        // Natural and linear phase draw the analog curves the FIR runs
+        // (dynamic bands stay IIR, so they keep the digital curve).
+        void setPhaseMode (dsp::PhaseMode mode) noexcept
+        {
+            if (mode != phaseMode)
+            {
+                phaseMode = mode;
+                curvesValid = false;
+            }
+        }
+
         float getRangeDb() const noexcept { return geometry.rangeDb; }
         void setRangeDb (float rangeDb);
         static constexpr std::array<float, 4> rangeChoices { 3.0f, 6.0f, 12.0f, 30.0f };
@@ -89,6 +104,12 @@ namespace fabcutie::ui
         std::function<void()> onSelectionChanged; // primary band changed
         std::function<void()> onBandsChanged;     // any band value changed
         std::function<void (float)> onRangeChanged;
+
+        // EQ Sketch.
+        void setSketchMode (bool shouldSketch);
+        bool isSketchMode() const noexcept { return sketchMode; }
+        std::function<void (bool)> onSketchModeChanged;
+        static constexpr int sketchMaxBands = 8;
 
         void paint (juce::Graphics&) override;
         void paintOverChildren (juce::Graphics&) override;
@@ -106,7 +127,7 @@ namespace fabcutie::ui
     private:
         using BandParam = params::BandParam;
 
-        enum class DragMode { none, nodes, lasso };
+        enum class DragMode { none, nodes, lasso, sketch };
 
         struct DragStart
         {
@@ -148,6 +169,9 @@ namespace fabcutie::ui
         void drawRangeButton (juce::Graphics&);
         void drawSoloBanner (juce::Graphics&);
         void drawPianoRoll (juce::Graphics&);
+        void drawSketch (juce::Graphics&);
+        void sketchTo (juce::Point<float>);
+        void finishSketch();
         float snapFrequency (float hz) const;
 
         EqModel& model;
@@ -169,6 +193,7 @@ namespace fabcutie::ui
         std::array<dsp::BandSettings, dsp::maxBands> bands {};
         double curveSampleRate = 0.0;
         bool curvesValid = false;
+        dsp::PhaseMode phaseMode = dsp::PhaseMode::zeroLatency;
         bool pianoRollShown = false;
         bool surround = false;
 
@@ -193,6 +218,12 @@ namespace fabcutie::ui
         juce::Point<float> lassoStart;
         juce::Rectangle<float> lasso;
         juce::Array<int> selectionBeforeLasso;
+
+        // The drawn curve, one value per pixel column of the graph (NaN
+        // where nothing was drawn).
+        bool sketchMode = false;
+        std::vector<float> sketchDb;
+        int lastSketchColumn = -1;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EqGraph)
     };

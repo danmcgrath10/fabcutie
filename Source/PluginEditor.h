@@ -10,15 +10,17 @@
 #include "ui/EqModel.h"
 #include "ui/InstanceList.h"
 #include "ui/LevelMeter.h"
+#include "ui/MatchPanel.h"
 #include "ui/SpectrumDisplay.h"
 #include "ui/Theme.h"
 
 class FabCutieAudioProcessor;
 
-// The main window: a header with the instance list, output gain and bypass,
-// the frequency graph with the spectrum analyzer behind it and the output
-// meter beside it, the analyzer bar underneath, and a band panel that floats
-// next to the selected node.
+// The main window: a header with the instance list, EQ Sketch and EQ Match,
+// character, output gain and bypass, the frequency graph with the spectrum
+// analyzer behind it and the output meter beside it, the analyzer bar and
+// phase mode underneath, and a band panel that floats next to the selected
+// node.
 //
 // The window normally shows its own instance, but the instance list can
 // point it at any other FabCutie in the session: everything below the
@@ -48,12 +50,15 @@ private:
     void refreshInstanceList();
     void updateOverlays();
     void updateBandPanel();
+    void updateMatchPanel();
     void applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings&);
     bool isEditingOther() const noexcept;
 
     void instancesChanged() override;
     void instanceRemoved (FabCutieAudioProcessor&) override;
     void timerCallback() override;
+    void updatePhaseBox();
+    void choosePhase (int itemId);
 
     fabcutie::ui::LookAndFeel lookAndFeel;
     FabCutieAudioProcessor& owner;
@@ -64,6 +69,8 @@ private:
     juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
     juce::TextButton bypassButton { "Bypass" };
     juce::ComboBox characterBox;
+    juce::TextButton sketchButton { "Sketch" }, matchButton { "Match" };
+    juce::ComboBox phaseBox; // phase mode and, for linear phase, its resolution
 
     juce::TextButton instancesButton, backButton { "Back" };
     fabcutie::ui::InstanceList instanceList;
@@ -71,6 +78,8 @@ private:
 
     // After the controls it attaches to, so it is destroyed first.
     std::unique_ptr<View> view;
+
+    bool compactHeader = false; // narrow windows drop the combo box labels
 
     juce::TooltipWindow tooltips { this, 700 };
 

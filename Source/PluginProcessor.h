@@ -10,9 +10,13 @@
 #include "dsp/Character.h"
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
+#include "dsp/PhaseModes.h"
+#include "dsp/SpectralDynamics.h"
 #include "ui/EqModel.h"
 
-class FabCutieAudioProcessor final : public juce::AudioProcessor
+class FabCutieAudioProcessor final : public juce::AudioProcessor,
+                                     private juce::AudioProcessorValueTreeState::Listener,
+                                     private juce::AsyncUpdater
 {
 public:
     FabCutieAudioProcessor();
@@ -25,6 +29,9 @@ public:
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
+
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using AudioProcessor::processBlockBypassed;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -78,9 +85,15 @@ private:
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* bypass = nullptr;
     std::atomic<float>* character = nullptr;
+    std::atomic<float>* phaseMode = nullptr;
+    std::atomic<float>* linearResolution = nullptr;
     std::array<fabcutie::params::BandParameterRefs, fabcutie::dsp::maxBands> bandParams;
 
+    fabcutie::dsp::PhaseStage phaseStage;
     fabcutie::dsp::EqEngine eq;
+    fabcutie::dsp::SpectralDynamics spectral;
+    std::atomic<bool> spectralRunning { false }; // read on the message thread for latency
+    std::atomic<bool> surroundLayout { false }; // more than two main channels
     fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
     fabcutie::dsp::BandSolo solo;
@@ -91,6 +104,20 @@ private:
     void pushBandSettings() noexcept;
     void pushSoloSettings() noexcept;
     void pushCharacterMode() noexcept;
+    void updateSpectralStage() noexcept;
+    void pushPhaseMode() noexcept;
+
+    bool hostBypassed = false; // inside processBlockBypassed
+    bool isBypassed() const noexcept;
+
+    fabcutie::dsp::PhaseMode currentPhaseMode() const noexcept;
+    int currentLinearResolution() const noexcept;
+    int totalLatency() const noexcept; // phase mode plus spectral dynamics
+
+    // Latency follows the phase mode and spectral dynamics; the host is told
+    // from the message thread.
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void handleAsyncUpdate() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessor)
 };
