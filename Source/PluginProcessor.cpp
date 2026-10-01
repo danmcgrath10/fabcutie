@@ -10,6 +10,7 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
 {
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
     bypass       = state.getRawParameterValue (fabcutie::params::id::bypass);
+    character    = state.getRawParameterValue (fabcutie::params::id::character);
 
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
         bandParams[(size_t) b].attach (state, b);
@@ -29,6 +30,13 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     }
 }
 
+void FabCutieAudioProcessor::pushCharacterMode() noexcept
+{
+    // Bypass fades the character out along with the bands.
+    const auto index = bypass->load() >= 0.5f ? 0 : juce::roundToInt (character->load());
+    characterStage.setMode ((fabcutie::dsp::CharacterMode) juce::jlimit (0, fabcutie::dsp::numCharacterModes - 1, index));
+}
+
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const juce::dsp::ProcessSpec spec { sampleRate,
@@ -37,6 +45,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushBandSettings();
     eq.prepare (sampleRate);
+
+    pushCharacterMode();
+    characterStage.prepare (sampleRate, samplesPerBlock, getTotalNumOutputChannels());
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.prepare (spec);
@@ -61,6 +72,9 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     pushBandSettings();
     eq.process (buffer);
+
+    pushCharacterMode();
+    characterStage.process (buffer);
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.process (buffer);
