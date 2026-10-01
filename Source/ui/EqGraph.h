@@ -62,6 +62,17 @@ namespace fabcutie::ui
         // mouse, e.g. a spectrum analyzer. Pass nullptr to remove it.
         void setBackgroundLayer (juce::Component* layer);
 
+        // Natural and linear phase draw the analog curves the FIR runs
+        // (dynamic bands stay IIR, so they keep the digital curve).
+        void setPhaseMode (dsp::PhaseMode mode) noexcept
+        {
+            if (mode != phaseMode)
+            {
+                phaseMode = mode;
+                curvesValid = false;
+            }
+        }
+
         float getRangeDb() const noexcept { return geometry.rangeDb; }
         void setRangeDb (float rangeDb);
         static constexpr std::array<float, 4> rangeChoices { 3.0f, 6.0f, 12.0f, 30.0f };
@@ -153,6 +164,7 @@ namespace fabcutie::ui
         std::array<dsp::BandSettings, dsp::maxBands> bands {};
         double curveSampleRate = 0.0;
         bool curvesValid = false;
+        dsp::PhaseMode phaseMode = dsp::PhaseMode::zeroLatency;
         bool pianoRollShown = false;
 
         std::vector<float> pointX, pointHz;

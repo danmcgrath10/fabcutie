@@ -133,4 +133,17 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
+
+    juce_add_console_app(FabCutiePhaseTests PRODUCT_NAME "FabCutiePhaseTests")
+    target_sources(FabCutiePhaseTests PRIVATE Tests/PhaseModeTests.cpp)
+    target_include_directories(FabCutiePhaseTests PRIVATE Source)
+    target_compile_definitions(FabCutiePhaseTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutiePhaseTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME PhaseModeTests COMMAND FabCutiePhaseTests)
 endif()

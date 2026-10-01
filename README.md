@@ -15,7 +15,7 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
 - Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
 - Sidechain per dynamic band: listen to the band's own input or the plugin's external sidechain input, filtered to the band's region (band pass for bells, low or high pass for shelves) or wide open.
-- Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
+- Three phase modes (see below): Zero Latency, Natural Phase and Linear Phase. In Zero Latency the filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 - Real-time spectrum analyzer behind the curves: input (Pre), output (Post) and sidechain spectra, with adjustable range, speed, tilt and resolution, and Freeze.
 - Collision detection: red shading where the output and the sidechain signal crowd the same frequencies.
 - Spectrum grab: hover a peak in the spectrum, click it and drag to cut (or boost) it right away.
@@ -65,6 +65,16 @@ The strip under the graph switches the **Pre** (input), **Post** (output) and **
 - **Show collisions with sidechain** and **Spectrum grab**.
 
 These settings are saved with the session. To feed the sidechain in Logic Pro, pick a track or bus in the **Side Chain** menu at the top of the plugin window.
+
+## Phase modes
+
+The **PHASE** menu in the header picks how the bands are realised:
+
+- **Zero Latency** (default): minimum-phase IIR filters, no latency. Like every digital EQ of this kind, curves near Nyquist narrow slightly ("cramping").
+- **Natural Phase**: an FIR filter built from the analog prototypes' magnitude and phase, so the EQ behaves like an analog one all the way up to Nyquist, with no cramping. Latency is about 7 ms (320 samples at 44.1/48 kHz).
+- **Linear Phase**: an FIR filter with the analog magnitude and no phase shift, so boosts and cuts don't smear transients or shift the relative timing of the low end. It pre-rings instead, most on steep cuts and narrow low bells. Pick the resolution in the same menu: Low, Medium, High, Very High or Maximum use 2048 to 32768-tap kernels (at 44.1/48 kHz, scaled up at higher rates). Higher resolution is more accurate in the low end; latency is half the kernel, from about 27 ms (Low) to 347 ms (Maximum) at 48 kHz.
+
+The plugin reports its latency to the host, so Logic Pro and other DAWs keep it in time with the other tracks. Changing mode fades the output out and back in. Dynamic bands always run as zero-latency IIR filters after the FIR, since their gain moves faster than a kernel could be redesigned; everything else (all band types, slopes and stereo/left/right/mid/side placement) works in every mode. The phase mode isn't automatable, because it changes the latency.
 
 ## Download a build
 
