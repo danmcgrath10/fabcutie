@@ -36,6 +36,38 @@ namespace fabcutie::dsp
 
     inline constexpr int numPlacements = 5;
 
+    // What a dynamic band listens to. Also stored in sessions.
+    enum class DetectorSource
+    {
+        internal, // the band's own input
+        external  // the plugin's sidechain input
+    };
+
+    inline constexpr int numDetectorSources = 2;
+
+    // How the detector signal is filtered before its level is measured.
+    enum class DetectorFilter
+    {
+        band, // only the part of the spectrum the band works on
+        wide  // the whole signal
+    };
+
+    inline constexpr int numDetectorFilters = 2;
+
+    // Dynamic EQ: above the threshold the band's gain moves by up to
+    // rangeDb on top of its static gain (negative ranges duck, positive
+    // ranges lift), following the detector with attack and release times.
+    struct DynamicSettings
+    {
+        bool enabled = false;
+        float thresholdDb = -30.0f; // detector peak level, dBFS
+        float rangeDb = -6.0f;
+        float attackMs = 10.0f;
+        float releaseMs = 120.0f;
+        DetectorSource source = DetectorSource::internal;
+        DetectorFilter filter = DetectorFilter::band;
+    };
+
     // Cut slopes in dB/octave. A slope of 6 * n dB/oct is an order n filter.
     inline constexpr std::array<int, 9> cutSlopesDbPerOct { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
     inline constexpr int maxFilterOrder = 16;
@@ -67,6 +99,7 @@ namespace fabcutie::dsp
         float q = 1.0f;            // bandwidth; for cuts, 1 is a flat (Butterworth) knee
         int slopeIndex = 1;        // into cutSlopesDbPerOct (or brickwallSlopeIndex), used by the cut types
         Placement placement = Placement::stereo;
+        DynamicSettings dynamics;
 
         // Changing any of these swaps the filter structure, so the band
         // briefly fades its effect out and back in instead of gliding.
@@ -76,4 +109,11 @@ namespace fabcutie::dsp
                 && slopeIndex == other.slopeIndex && placement == other.placement;
         }
     };
+
+    // Band types whose gain the dynamics can move.
+    inline constexpr bool supportsDynamics (FilterType t) noexcept
+    {
+        return t == FilterType::bell || t == FilterType::lowShelf
+            || t == FilterType::highShelf || t == FilterType::tiltShelf;
+    }
 }

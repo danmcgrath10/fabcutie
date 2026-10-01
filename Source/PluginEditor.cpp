@@ -21,6 +21,8 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
 {
     using namespace fabcutie;
 
+    model.setDynamicGainSource (&p.getDynamicGains());
+
     addAndMakeVisible (graph);
     addChildComponent (bandPanel);
 

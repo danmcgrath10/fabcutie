@@ -14,14 +14,28 @@ namespace fabcutie::ui
         slopeBox.setTooltip ("Cut slope");
         placementBox.setTooltip ("Which channels the band works on");
 
-        for (auto* box : { &typeBox, &slopeBox, &placementBox })
+        sourceBox.addItemList (params::detectorSourceNames(), 1);
+        detectorFilterBox.addItemList (params::detectorFilterNames(), 1);
+
+        sourceBox.setTooltip ("Sidechain: the band's own input, or the plugin's sidechain input");
+        detectorFilterBox.setTooltip ("Sidechain filter: listen only around the band, or to the whole signal");
+
+        for (auto* box : { &typeBox, &slopeBox, &placementBox, &sourceBox, &detectorFilterBox })
             addAndMakeVisible (*box);
+
+        dynamicButton.setClickingTogglesState (true);
+        dynamicButton.setTooltip ("Dynamic: move the band's gain with the level of the signal");
+        addAndMakeVisible (dynamicButton);
 
         frequency.name = "FREQ";
         gain.name = "GAIN";
         q.name = "Q";
+        threshold.name = "THRESH";
+        range.name = "RANGE";
+        attack.name = "ATTACK";
+        release.name = "RELEASE";
 
-        for (auto* knob : { &frequency, &gain, &q })
+        for (auto* knob : allKnobs())
         {
             knob->slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 80, 16);
             addAndMakeVisible (knob->slider);
@@ -56,8 +70,11 @@ namespace fabcutie::ui
         typeAttachment.reset();
         slopeAttachment.reset();
         placementAttachment.reset();
+        dynamicAttachment.reset();
+        sourceAttachment.reset();
+        detectorFilterAttachment.reset();
 
-        for (auto* knob : { &frequency, &gain, &q })
+        for (auto* knob : allKnobs())
             knob->attachment.reset();
 
         if (band < 0)
@@ -69,10 +86,17 @@ namespace fabcutie::ui
         typeAttachment      = std::make_unique<ComboBoxAttachment> (state, id (BandParam::type), typeBox);
         slopeAttachment     = std::make_unique<ComboBoxAttachment> (state, id (BandParam::slope), slopeBox);
         placementAttachment = std::make_unique<ComboBoxAttachment> (state, id (BandParam::placement), placementBox);
+        sourceAttachment    = std::make_unique<ComboBoxAttachment> (state, id (BandParam::detectorSource), sourceBox);
+        detectorFilterAttachment = std::make_unique<ComboBoxAttachment> (state, id (BandParam::detectorFilter), detectorFilterBox);
+        dynamicAttachment   = std::make_unique<ButtonAttachment> (state, id (BandParam::dynamic), dynamicButton);
 
         const std::pair<Knob*, BandParam> knobs[] { { &frequency, BandParam::frequency },
                                                      { &gain, BandParam::gain },
-                                                     { &q, BandParam::q } };
+                                                     { &q, BandParam::q },
+                                                     { &threshold, BandParam::threshold },
+                                                     { &range, BandParam::range },
+                                                     { &attack, BandParam::attack },
+                                                     { &release, BandParam::release } };
 
         const auto colour = bandColour (band);
 
@@ -92,6 +116,14 @@ namespace fabcutie::ui
     void BandPanel::timerCallback()
     {
         updateEnablement();
+
+        // Keep the live dynamic gain readout in the header current.
+        const auto dynamicGain = band >= 0 ? model.getDynamicGainDb (band) : 0.0f;
+        if (std::abs (dynamicGain - shownDynamicGainDb) >= 0.05f)
+        {
+            shownDynamicGainDb = dynamicGain;
+            repaint (getLocalBounds().removeFromTop (34));
+        }
     }
 
     void BandPanel::updateEnablement()
@@ -100,9 +132,26 @@ namespace fabcutie::ui
             return;
 
         const auto settings = model.getBand (band);
-        gain.slider.setEnabled (EqModel::usesGain (settings.type));
+        const auto type = settings.type;
+        gain.slider.setEnabled (EqModel::usesGain (type));
         q.slider.setEnabled (EqModel::usesQ (settings));
-        slopeBox.setEnabled (EqModel::usesSlope (settings.type));
+        slopeBox.setEnabled (EqModel::usesSlope (type));
+
+        const auto canBeDynamic = EqModel::usesDynamics (type);
+        const auto dynamic = canBeDynamic && settings.dynamics.enabled;
+        dynamicButton.setEnabled (canBeDynamic);
+
+        auto changed = false;
+        for (juce::Component* c : { (juce::Component*) &sourceBox, (juce::Component*) &detectorFilterBox,
+                                    (juce::Component*) &threshold.slider, (juce::Component*) &range.slider,
+                                    (juce::Component*) &attack.slider, (juce::Component*) &release.slider })
+        {
+            changed = changed || c->isEnabled() != dynamic;
+            c->setEnabled (dynamic);
+        }
+
+        if (changed)
+            repaint();
     }
 
     void BandPanel::paint (juce::Graphics& g)
@@ -129,8 +178,20 @@ namespace fabcutie::ui
         g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
         g.drawText ("Band " + juce::String (band + 1), header, juce::Justification::centredLeft);
 
+        if (std::abs (shownDynamicGainDb) >= 0.05f)
+        {
+            g.setColour (colour);
+            g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+            g.drawText ((shownDynamicGainDb > 0.0f ? "+" : "") + juce::String (shownDynamicGainDb, 1) + " dB",
+                        header.withTrimmedRight (30.0f), juce::Justification::centredRight);
+        }
+
+        // A hairline between the EQ row and the dynamics row.
+        g.setColour (colours::panelOutline);
+        g.fillRect (juce::Rectangle<float> (12.0f, (float) dynamicButton.getY() - 7.0f, (float) getWidth() - 24.0f, 1.0f));
+
         g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-        for (auto* knob : { &frequency, &gain, &q })
+        for (auto* knob : allKnobs())
         {
             g.setColour (knob->slider.isEnabled() ? colours::textDim : colours::textDim.withMultipliedAlpha (0.4f));
             const auto area = knob->slider.getBounds().withHeight (14).translated (0, -14);
@@ -147,18 +208,33 @@ namespace fabcutie::ui
 
         area.removeFromTop (6);
 
-        auto left = area.removeFromLeft (128);
-        for (auto* box : { &typeBox, &slopeBox, &placementBox })
+        const auto rowHeight = 3 * 22 + 2 * 6;
+        auto eqRow = area.removeFromTop (rowHeight);
+        area.removeFromTop (14);
+        auto dynamicRow = area.removeFromTop (rowHeight);
+
+        auto layoutRow = [] (juce::Rectangle<int> row, std::initializer_list<juce::Component*> column,
+                             std::initializer_list<Knob*> knobs)
         {
-            box->setBounds (left.removeFromTop (22));
-            left.removeFromTop (6);
-        }
+            auto left = row.removeFromLeft (128);
+            for (auto* c : column)
+            {
+                c->setBounds (left.removeFromTop (22));
+                left.removeFromTop (6);
+            }
 
-        area.removeFromLeft (8);
-        area.removeFromTop (14); // knob names
+            row.removeFromLeft (8);
+            row.removeFromTop (14); // knob names
 
-        const auto knobWidth = area.getWidth() / 3;
-        for (auto* knob : { &frequency, &gain, &q })
-            knob->slider.setBounds (area.removeFromLeft (knobWidth));
+            const auto knobWidth = row.getWidth() / (int) knobs.size();
+            for (auto* knob : knobs)
+                knob->slider.setBounds (row.removeFromLeft (knobWidth));
+        };
+
+        layoutRow (eqRow, { &typeBox, &slopeBox, &placementBox }, { &frequency, &gain, &q });
+        layoutRow (dynamicRow, { &dynamicButton, &sourceBox, &detectorFilterBox }, { &threshold, &range, &attack, &release });
+
+        for (auto* knob : { &threshold, &range, &attack, &release })
+            knob->slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, knob->slider.getWidth(), 16);
     }
 }

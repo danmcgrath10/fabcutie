@@ -8,7 +8,8 @@ namespace fabcutie::dsp
 {
     // Runs up to 24 bands in series. Each band works on the stereo pair, one
     // side of it, or the mid or side signal; the buffer is converted between
-    // left/right and mid/side only when consecutive bands need it.
+    // left/right and mid/side only when consecutive bands need it. Dynamic
+    // bands set to an external source listen to the sidechain buffer.
     class EqEngine
     {
     public:
@@ -23,7 +24,12 @@ namespace fabcutie::dsp
             bands[(size_t) index].setTarget (settings);
         }
 
-        void process (juce::AudioBuffer<float>& buffer) noexcept
+        float getDynamicGainDb (int index) const noexcept
+        {
+            return bands[(size_t) index].getDynamicGainDb();
+        }
+
+        void process (juce::AudioBuffer<float>& buffer, const juce::AudioBuffer<float>* sidechain = nullptr) noexcept
         {
             const auto numChannels = std::min (buffer.getNumChannels(), EqBand::maxChannels);
             const auto numSamples = buffer.getNumSamples();
@@ -33,6 +39,13 @@ namespace fabcutie::dsp
 
             auto* const* data = buffer.getArrayOfWritePointers();
             auto midSide = false;
+
+            // With no sidechain connected, external detection hears silence.
+            const auto numSidechain = sidechain != nullptr ? std::min (sidechain->getNumChannels(), BandDynamics::maxChannels) : 0;
+            const auto sidechainSamples = sidechain != nullptr ? std::min (sidechain->getNumSamples(), numSamples) : 0;
+            const float* const* sidechainData = numSidechain > 0 && sidechainSamples == numSamples
+                                                    ? sidechain->getArrayOfReadPointers() : nullptr;
+            static const float* const noChannels[1] { nullptr };
 
             for (auto& band : bands)
             {
@@ -79,7 +92,16 @@ namespace fabcutie::dsp
                 }
 
                 if (count > 0)
-                    band.process (channels, slots, count, numSamples);
+                {
+                    const auto external = band.listensToSidechain();
+
+                    if (! external)
+                        band.process (channels, slots, count, numSamples);
+                    else if (sidechainData != nullptr)
+                        band.process (channels, slots, count, numSamples, sidechainData, numSidechain);
+                    else
+                        band.process (channels, slots, count, numSamples, noChannels, 0);
+                }
             }
 
             if (midSide)

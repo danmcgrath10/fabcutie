@@ -6,6 +6,7 @@
 #include "dsp/Character.h"
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
+#include "ui/EqModel.h"
 
 class FabCutieAudioProcessor final : public juce::AudioProcessor
 {
@@ -41,6 +42,9 @@ public:
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
 
+    // How far each dynamic band is currently moving its gain, for the editor.
+    const fabcutie::ui::EqModel::DynamicGains& getDynamicGains() const noexcept { return dynamicGains; }
+
 private:
     juce::AudioProcessorValueTreeState state;
 
@@ -52,6 +56,8 @@ private:
     fabcutie::dsp::EqEngine eq;
     fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
+
+    fabcutie::ui::EqModel::DynamicGains dynamicGains {};
 
     void pushBandSettings() noexcept;
     void pushCharacterMode() noexcept;

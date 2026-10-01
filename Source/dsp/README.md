@@ -11,9 +11,12 @@ Audio-thread code lives here, independent of the UI.
   Chebyshev, -3 dB at the cutoff, 100 dB stop band).
 - `Notes.h`: equal-tempered note maths for the piano roll (A4 = 440 Hz).
 - `EqBand.h`: one band: smoothed frequency/gain/Q, click-free switching of type, slope,
-  placement and on/off.
-- `EqEngine.h`: 24 bands in series with per-band stereo/left/right/mid/side routing.
+  placement and on/off, and the dynamic gain offset applied on top of the static gain.
+- `BandDynamics.h`: a dynamic band's detector (sidechain filter, peak level with release,
+  linked across channels) and gain computer (threshold, range, soft knee, attack).
+- `EqEngine.h`: 24 bands in series with per-band stereo/left/right/mid/side routing, and the
+  external sidechain buffer for dynamic bands that listen to it.
 - `Character.h`: global Clean/Gentle/Warm saturation after the bands, run at 4x oversampling
   so its harmonics don't alias. Unity gain for quiet signals; Clean is a bit-exact bypass.
 - `OutputStage.h`: smoothed output gain and bypass.
-- Planned: dynamic EQ, linear-phase mode.
+- Planned: linear-phase mode.

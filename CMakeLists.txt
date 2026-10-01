@@ -116,4 +116,17 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME CharacterTests COMMAND FabCutieCharacterTests)
+
+    juce_add_console_app(FabCutieDynamicTests PRODUCT_NAME "FabCutieDynamicTests")
+    target_sources(FabCutieDynamicTests PRIVATE Tests/DynamicEqTests.cpp)
+    target_include_directories(FabCutieDynamicTests PRIVATE Source)
+    target_compile_definitions(FabCutieDynamicTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieDynamicTests
+        PRIVATE
+            juce::juce_audio_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
 endif()

@@ -60,8 +60,19 @@ namespace fabcutie::ui
             return s.type != dsp::FilterType::flatTilt && ! (usesSlope (s.type) && dsp::isBrickwall (s.slopeIndex));
         }
 
+        static bool usesDynamics (dsp::FilterType t) noexcept { return dsp::supportsDynamics (t); }
+
+        // Live gain offset of each dynamic band, written by the processor.
+        using DynamicGains = std::array<std::atomic<float>, dsp::maxBands>;
+        void setDynamicGainSource (const DynamicGains* source) noexcept { dynamicGains = source; }
+        float getDynamicGainDb (int band) const noexcept
+        {
+            return dynamicGains != nullptr ? (*dynamicGains)[(size_t) band].load (std::memory_order_relaxed) : 0.0f;
+        }
+
     private:
-        static constexpr int numBandParams = 7;
+        static constexpr int numBandParams = params::numBandParams;
+        const DynamicGains* dynamicGains = nullptr;
 
         juce::AudioProcessorValueTreeState& state;
         std::array<params::BandParameterRefs, dsp::maxBands> reads;
