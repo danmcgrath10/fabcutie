@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(FabCutie VERSION 0.1.0 LANGUAGES C CXX)
+project(FabCutie VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -77,3 +77,26 @@ target_link_libraries(FabCutie
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# ---------------------------------------------------------------------------
+# Offline DSP tests (run with ctest). They only need juce_audio_basics, so they
+# build without the plugin formats.
+# ---------------------------------------------------------------------------
+option(FABCUTIE_BUILD_TESTS "Build the EQ engine tests" ON)
+
+if(FABCUTIE_BUILD_TESTS)
+    enable_testing()
+
+    juce_add_console_app(FabCutieTests PRODUCT_NAME "FabCutieTests")
+    target_sources(FabCutieTests PRIVATE Tests/EqEngineTests.cpp)
+    target_include_directories(FabCutieTests PRIVATE Source)
+    target_compile_definitions(FabCutieTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieTests
+        PRIVATE
+            juce::juce_audio_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME EqEngineTests COMMAND FabCutieTests)
+endif()

@@ -4,12 +4,21 @@ An open-source parametric EQ plugin for macOS and Windows (AU, VST3 and Standalo
 
 FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q 3. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
 
-> **Status:** early skeleton. Right now FabCutie is a clean pass-through with an output gain and bypass, so the build, AU validation and DAW loading can be verified before the EQ lands.
+> **Status:** the EQ engine works, behind a temporary test editor (pick a band, then set its controls). The draw-on-the-graph interface is next.
+
+## What it does
+
+- Up to 24 bands, each with: Bell, Low Shelf, Low Cut, High Shelf, High Cut, Notch, Band Pass or Tilt Shelf.
+- Cut slopes of 6, 12, 18, 24, 30, 36, 48, 72 and 96 dB/oct. For cuts, Q 1 is a flat (Butterworth) knee and higher Q adds resonance.
+- Per-band placement: Stereo, Left, Right, Mid or Side.
+- Frequency 10 Hz to 30 kHz, gain ±30 dB, Q 0.025 to 40.
+- Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
+- Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 
 ## Roadmap
 
-1. **Plugin skeleton** (this): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
-2. **EQ engine:** up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
+1. **Plugin skeleton** (done): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
+2. **EQ engine** (done): up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
 3. **Interface:** interactive frequency graph (drag nodes for frequency and gain, scroll for Q) over a real-time spectrum analyzer.
 4. **Advanced:** dynamic EQ per band, linear-phase mode, analyzer collision display.
 
@@ -28,7 +37,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j
 ```
 
-JUCE is downloaded automatically on the first configure. To use a JUCE checkout you already have, add `-DFABCUTIE_JUCE_PATH=/path/to/JUCE`.
+JUCE is downloaded automatically on the first configure. Run the DSP tests with `ctest --test-dir build -C Release --output-on-failure`. To use a JUCE checkout you already have, add `-DFABCUTIE_JUCE_PATH=/path/to/JUCE`.
 
 Builds are universal (Apple Silicon and Intel). Outputs land in `build/FabCutie_artefacts/Release/`:
 
@@ -79,10 +88,11 @@ Copy `FabCutie.vst3` to `~/Library/Audio/Plug-Ins/VST3/` on macOS or `C:\Program
 CMakeLists.txt          JUCE fetch + plugin target
 Source/
   PluginProcessor.*     audio processor, state save/restore
-  PluginEditor.*        editor window (placeholder UI for now)
+  PluginEditor.*        editor window (temporary band editor for now)
   Parameters.*          every automatable parameter, with stable IDs
-  dsp/                  audio-thread code (output stage now, EQ engine next)
+  dsp/                  audio-thread code: EQ engine, filter design, output stage
   ui/                   editor components (frequency graph, analyzer)
+Tests/                  offline EQ engine tests (ctest)
 .github/workflows/      macOS + Windows CI, runs auval
 ```
 
