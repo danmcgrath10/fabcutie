@@ -12,11 +12,13 @@ namespace fabcutie::params
     // appeared in. Never reuse or rename an existing ID.
     inline constexpr int version = 1;      // output gain, bypass
     inline constexpr int bandsVersion = 2; // per-band EQ parameters
+    inline constexpr int pianoRollVersion = 3;
 
     namespace id
     {
         inline constexpr auto outputGain = "outputGain";
         inline constexpr auto bypass     = "bypass";
+        inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
     }
 
     namespace range

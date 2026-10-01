@@ -17,10 +17,12 @@ namespace fabcutie::dsp
         highCut,
         notch,
         bandPass,
-        tiltShelf
+        tiltShelf,
+        allPass,  // flat magnitude, shifts phase around the frequency
+        flatTilt  // a straight dB/octave tilt across the whole spectrum
     };
 
-    inline constexpr int numFilterTypes = 8;
+    inline constexpr int numFilterTypes = 10;
 
     // Which part of the signal a band works on. Also stored in sessions.
     enum class Placement
@@ -38,10 +40,21 @@ namespace fabcutie::dsp
     inline constexpr std::array<int, 9> cutSlopesDbPerOct { 6, 12, 18, 24, 30, 36, 48, 72, 96 };
     inline constexpr int maxFilterOrder = 16;
 
+    // The slope choice after the fixed slopes: a 16th-order inverse
+    // Chebyshev cut that is flat up to the cutoff and 100 dB down less than
+    // half an octave past it.
+    inline constexpr int brickwallSlopeIndex = (int) cutSlopesDbPerOct.size();
+    inline constexpr int numSlopes = brickwallSlopeIndex + 1;
+
+    inline constexpr bool isBrickwall (int slopeIndex) noexcept
+    {
+        return slopeIndex >= brickwallSlopeIndex;
+    }
+
     inline constexpr int filterOrderForSlope (int slopeIndex) noexcept
     {
         if (slopeIndex < 0) slopeIndex = 0;
-        if (slopeIndex >= (int) cutSlopesDbPerOct.size()) slopeIndex = (int) cutSlopesDbPerOct.size() - 1;
+        if (slopeIndex >= (int) cutSlopesDbPerOct.size()) return maxFilterOrder;
         return cutSlopesDbPerOct[(size_t) slopeIndex] / 6;
     }
 
@@ -50,9 +63,9 @@ namespace fabcutie::dsp
         bool enabled = false;
         FilterType type = FilterType::bell;
         float frequency = 1000.0f; // Hz
-        float gainDb = 0.0f;       // bell, shelves and tilt
+        float gainDb = 0.0f;       // bell, shelves and tilts
         float q = 1.0f;            // bandwidth; for cuts, 1 is a flat (Butterworth) knee
-        int slopeIndex = 1;        // into cutSlopesDbPerOct, used by the cut types
+        int slopeIndex = 1;        // into cutSlopesDbPerOct (or brickwallSlopeIndex), used by the cut types
         Placement placement = Placement::stereo;
 
         // Changing any of these swaps the filter structure, so the band

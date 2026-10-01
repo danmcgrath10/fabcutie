@@ -59,7 +59,7 @@ namespace fabcutie::params
 
     juce::StringArray filterTypeNames()
     {
-        return { "Bell", "Low Shelf", "Low Cut", "High Shelf", "High Cut", "Notch", "Band Pass", "Tilt Shelf" };
+        return { "Bell", "Low Shelf", "Low Cut", "High Shelf", "High Cut", "Notch", "Band Pass", "Tilt Shelf", "All Pass", "Flat Tilt" };
     }
 
     juce::StringArray slopeNames()
@@ -67,6 +67,8 @@ namespace fabcutie::params
         juce::StringArray names;
         for (auto slope : dsp::cutSlopesDbPerOct)
             names.add (juce::String (slope) + " dB/oct");
+        names.add ("Brickwall");
+        jassert (names.size() == dsp::numSlopes);
         return names;
     }
 
@@ -94,6 +96,12 @@ namespace fabcutie::params
             juce::ParameterID { id::bypass, version },
             "Bypass",
             false));
+
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { id::pianoRoll, pianoRollVersion },
+            "Piano Roll",
+            false,
+            juce::AudioParameterBoolAttributes().withAutomatable (false)));
 
         const auto frequencyAttributes = juce::AudioParameterFloatAttributes()
                                              .withLabel ("Hz")
@@ -175,7 +183,7 @@ namespace fabcutie::params
         s.frequency  = frequency->load();
         s.gainDb     = gain->load();
         s.q          = q->load();
-        s.slopeIndex = juce::roundToInt (slope->load());
+        s.slopeIndex = juce::jlimit (0, dsp::numSlopes - 1, juce::roundToInt (slope->load()));
         s.placement  = (dsp::Placement) juce::jlimit (0, dsp::numPlacements - 1, juce::roundToInt (placement->load()));
         return s;
     }
