@@ -14,7 +14,14 @@ Editor components.
 - `AnalyzerSettings.h`: analyzer range, speed, tilt, resolution etc., saved in the state tree.
 - `AnalyzerBar.*`: the toggles and settings menu under the graph.
 - `LevelMeter.*`: the output meter.
+- `WorkflowBar.*`: the header's undo / redo, preset browser, A/B and settings menu (window size, MIDI).
+- `OutputBar.*`: gain scale, auto gain and phase invert, beside the analyzer bar.
+- `BandClipboard.*`: copy and paste of band settings through the system clipboard.
+- `ValueEntry.*`: the box for typing a band's frequency, gain and Q.
+- `MidiLearnMenu.*`: the right-click MIDI learn menu on knobs and menus.
 - `InstanceList.*`: the instance list panel (show another instance's curve, edit it here, rename).
   The editor swaps everything bound to one instance (model, graph, band panel, analyzer, meter,
   header attachments) when it is pointed at another; `EqGraph::setOverlays` draws the shown curves.
 - `MatchPanel.*`: EQ Match: reference choice, capture, learn, amount, band count, preview and Apply.
+
+The undo history, A/B slots, presets and MIDI map live in `Source/workflow/` and are owned by the processor, so they outlive the window.

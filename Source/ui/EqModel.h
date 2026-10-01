@@ -53,6 +53,9 @@ namespace fabcutie::ui
         bool isPianoRollOn() const noexcept { return pianoRoll->load() >= 0.5f; }
         void setPianoRoll (bool on);
 
+        // The gain scale as a factor (1 = 100 %).
+        float getGainScale() const noexcept { return gainScale->load() / 100.0f; }
+
         static bool usesGain (dsp::FilterType t) noexcept
         {
             return t == dsp::FilterType::bell || t == dsp::FilterType::lowShelf
@@ -100,5 +103,6 @@ namespace fabcutie::ui
         std::array<std::array<juce::RangedAudioParameter*, numBandParams>, dsp::maxBands> writes {};
         std::array<std::array<int, numBandParams>, dsp::maxBands> gestureDepth {};
         std::atomic<float>* pianoRoll = nullptr;
+        std::atomic<float>* gainScale = nullptr;
     };
 }

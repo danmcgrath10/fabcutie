@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "Parameters.h"
+#include "ui/ValueEntry.h"
 
 namespace
 {
@@ -31,7 +32,10 @@ struct FabCutieAudioProcessorEditor::View
           bandPanel (model),
           spectrum (graph, link, [&p] { return p.getSampleRate(); }),
           meter (link.outputMeter),
-          matchPanel (model, link, [&p] { return p.getSampleRate(); })
+          matchPanel (model, link, [&p] { return p.getSampleRate(); }),
+          workflowBar (p.getHistory(), p.getABCompare(), p.getPresets(), p.getMidiLearn()),
+          outputBar (state, [&p] { return p.getAutoGainDb(); }),
+          midiLearnMenu (p.getParameterSet(), p.getMidiLearn())
     {
         model.setDynamicGainSource (&p.getDynamicGains());
 
@@ -60,6 +64,9 @@ struct FabCutieAudioProcessorEditor::View
     fabcutie::ui::SpectrumDisplay spectrum;
     fabcutie::ui::LevelMeter meter;
     fabcutie::ui::MatchPanel matchPanel;
+    fabcutie::ui::WorkflowBar workflowBar;
+    fabcutie::ui::OutputBar outputBar;
+    fabcutie::ui::MidiLearnMenu midiLearnMenu;
 
     std::unique_ptr<SliderAttachment> outputGainAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
@@ -73,7 +80,6 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     : AudioProcessorEditor (&p),
       owner (p),
       analyzerBar ([this] { return view != nullptr && view->link.sidechainConnected.load(); })
-
 {
     using namespace fabcutie;
 
@@ -161,9 +167,9 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     startTimerHz (15);
 
     setResizable (true, true);
-    setResizeLimits (800, 380, 2400, 1500);
-    setSize ((int) owner.getState().state.getProperty (editorWidthId, 960),
-             (int) owner.getState().state.getProperty (editorHeightId, 580));
+    setResizeLimits (900, 400, 2400, 1500);
+    setSize ((int) owner.getState().state.getProperty (editorWidthId, 1040),
+             (int) owner.getState().state.getProperty (editorHeightId, 600));
 }
 
 FabCutieAudioProcessorEditor::~FabCutieAudioProcessorEditor()
@@ -193,6 +199,26 @@ void FabCutieAudioProcessorEditor::setTarget (FabCutieAudioProcessor& target)
     addChildComponent (v.bandPanel);
     addAndMakeVisible (v.meter);
     addChildComponent (v.matchPanel);
+    addAndMakeVisible (v.workflowBar);
+    addAndMakeVisible (v.outputBar);
+
+    v.workflowBar.onSizeChosen = [this] (int w, int h) { setSize (w, h); };
+    v.graph.onEnterValues = [this] (int band) { fabcutie::ui::ValueEntry::show (*this, view->model, band); };
+
+    // Right-click MIDI learn on every knob and choice.
+    const auto fixed = [] (const char* id) { return [id] { return juce::String (id); }; };
+    v.midiLearnMenu.watch (outputGain, fixed (params::id::outputGain));
+    v.midiLearnMenu.watch (characterBox, fixed (params::id::character));
+    v.midiLearnMenu.watch (v.outputBar.getGainScaleSlider(), fixed (params::id::gainScale));
+
+    v.bandPanel.forEachControl ([this, &v] (juce::Component& c, params::BandParam param)
+    {
+        v.midiLearnMenu.watch (c, [&v, param]
+        {
+            const auto band = v.bandPanel.getBand();
+            return band >= 0 ? params::bandParamId (band, param) : juce::String();
+        });
+    });
 
     // Sketch and Match start switched off on the newly edited instance.
     sketchButton.setToggleState (false, juce::dontSendNotification);
@@ -425,6 +451,29 @@ void FabCutieAudioProcessorEditor::updateMatchPanel()
     matchPanel.setBounds (area.getRight() - width, area.getY() + 34, width, fabcutie::ui::MatchPanel::preferredHeight);
 }
 
+bool FabCutieAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (view == nullptr)
+        return false;
+
+    auto& history = view->processor.getHistory();
+    const auto cmd = juce::ModifierKeys::commandModifier;
+
+    if (key == juce::KeyPress ('z', cmd, 0))
+    {
+        history.undo();
+        return true;
+    }
+
+    if (key == juce::KeyPress ('z', cmd | juce::ModifierKeys::shiftModifier, 0) || key == juce::KeyPress ('y', cmd, 0))
+    {
+        history.redo();
+        return true;
+    }
+
+    return false;
+}
+
 void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
 {
     using namespace fabcutie::ui;
@@ -436,23 +485,20 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
     g.drawText ("FabCutie", header, juce::Justification::centredLeft);
 
+    // Carry the analyzer bar's top line on under the character and phase menus.
+    g.setColour (colours::panelOutline.withMultipliedAlpha (0.5f));
+    g.drawHorizontalLine (analyzerBar.getY(), (float) analyzerBar.getRight(), (float) getWidth());
+
+    if (compactHeader)
+        return;
+
     g.setColour (colours::textDim.withMultipliedAlpha (0.6f));
     g.setFont (juce::FontOptions (12.0f));
     g.drawText ("v" JucePlugin_VersionString, header.withTrimmedLeft (98), juce::Justification::centredLeft);
 
     g.setColour (colours::textDim);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-
-    if (! compactHeader)
-    {
-        g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
-        g.drawText ("CHARACTER", characterBox.getBounds().translated (-76, 0).withWidth (72), juce::Justification::centredLeft);
-        g.drawText ("PHASE", phaseBox.getBounds().translated (-48, 0).withWidth (44), juce::Justification::centredLeft);
-    }
-
-    // Carry the analyzer bar's top line on under the phase mode.
-    g.setColour (colours::panelOutline.withMultipliedAlpha (0.5f));
-    g.drawHorizontalLine (analyzerBar.getY(), (float) analyzerBar.getRight(), (float) getWidth());
+    g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
 }
 
 void FabCutieAudioProcessorEditor::paintOverChildren (juce::Graphics& g)
@@ -478,40 +524,49 @@ void FabCutieAudioProcessorEditor::resized()
     auto area = getLocalBounds();
     auto header = area.removeFromTop (headerHeight).reduced (16, 6);
 
+    // Narrow windows drop the version and the OUTPUT label to make room for
+    // the presets; the controls' tooltips still say what they are.
+    compactHeader = getWidth() < 1100;
+
     bypassButton.setBounds (header.removeFromRight (72).withSizeKeepingCentre (72, 24));
     header.removeFromRight (16);
     outputGain.setBounds (header.removeFromRight (100));
-    // Below this width the labels would run into the instance list button;
-    // the boxes' tooltips still say what they are.
-    compactHeader = getWidth() < 940;
-    header.removeFromRight (compactHeader ? 8 : 66); // "OUTPUT" label
-    characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
-    header.removeFromRight (compactHeader ? 12 : 90); // "CHARACTER" label
+    header.removeFromRight (compactHeader ? 16 : 66); // "OUTPUT" label
 
-    matchButton.setBounds (header.removeFromRight (64).withSizeKeepingCentre (64, 24));
+    matchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
     header.removeFromRight (6);
-    sketchButton.setBounds (header.removeFromRight (64).withSizeKeepingCentre (64, 24));
+    sketchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
     header.removeFromRight (16);
 
-    // Instance list button after the title and version.
-    header.removeFromLeft (150);
-    auto instances = header.removeFromLeft (juce::jlimit (0, 180, header.getWidth() - 62));
+    // Title, instance list button (and Back while editing another
+    // instance), then undo, presets and A/B in what is left.
+    header.removeFromLeft (compactHeader ? 104 : 140);
+    auto instances = header.removeFromLeft (juce::jlimit (0, 160, header.getWidth() - 208));
     instancesButton.setBounds (instances.withSizeKeepingCentre (instances.getWidth(), 24));
-    header.removeFromLeft (6);
-    backButton.setBounds (header.removeFromLeft (juce::jmin (56, header.getWidth())).withSizeKeepingCentre (56, 24));
+    header.removeFromLeft (8);
+
+    if (backButton.isVisible())
+    {
+        backButton.setBounds (header.removeFromLeft (56).withSizeKeepingCentre (56, 24));
+        header.removeFromLeft (8);
+    }
 
     instanceList.setBounds (instancesButton.getX(), headerHeight,
                             juce::jmin (fabcutie::ui::InstanceList::preferredWidth, getWidth() - instancesButton.getX() - 8),
                             instanceList.getPreferredHeight());
 
-    // The phase mode sits at the right end of the bar under the graph.
+    // Under the graph: the analyzer toggles, then character, phase mode and
+    // the output bar (gain scale, auto gain, phase invert) on the right.
     auto bottom = area.removeFromBottom (analyzerBarHeight);
-    phaseBox.setBounds (bottom.removeFromRight (128 + 12).withTrimmedRight (12).withSizeKeepingCentre (128, 24));
-    bottom.removeFromRight (compactHeader ? 8 : 52); // "PHASE" label
+    auto outputArea = bottom.removeFromRight (juce::jlimit (0, fabcutie::ui::OutputBar::preferredWidth, bottom.getWidth() - 380 - 236));
+    phaseBox.setBounds (bottom.removeFromRight (128 + 8).withTrimmedRight (8).withSizeKeepingCentre (128, 24));
+    characterBox.setBounds (bottom.removeFromRight (92 + 8).withTrimmedRight (8).withSizeKeepingCentre (92, 24));
     analyzerBar.setBounds (bottom);
 
     if (view != nullptr)
     {
+        view->workflowBar.setBounds (header);
+        view->outputBar.setBounds (outputArea);
         view->meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
         view->graph.setBounds (area);
         updateBandPanel();

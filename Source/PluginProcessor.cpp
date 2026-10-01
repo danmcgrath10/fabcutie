@@ -12,6 +12,9 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
     bypass       = state.getRawParameterValue (fabcutie::params::id::bypass);
     character    = state.getRawParameterValue (fabcutie::params::id::character);
+    autoGain     = state.getRawParameterValue (fabcutie::params::id::autoGain);
+    gainScale    = state.getRawParameterValue (fabcutie::params::id::gainScale);
+    phaseInvert  = state.getRawParameterValue (fabcutie::params::id::phaseInvert);
     phaseMode    = state.getRawParameterValue (fabcutie::params::id::phaseMode);
     linearResolution = state.getRawParameterValue (fabcutie::params::id::linearResolution);
 
@@ -128,6 +131,8 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     // Bypass switches every band off, so the EQ fades out (and back in)
     // without clicks instead of jumping.
     const auto bypassed = isBypassed();
+    const auto scale = gainScale->load() / 100.0f;
+    fabcutie::dsp::AutoGain::Bands bands;
 
     // In natural and linear phase the FIR runs the static bands and
     // EqEngine only the dynamic ones.
@@ -142,6 +147,8 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
         if (surroundLayout.load (std::memory_order_relaxed))
             settings.dynamics.spectral = false;
 
+        fabcutie::params::applyGainScale (settings, scale);
+
         // The spectral stage keeps running (and its latency stays put)
         // while bypassed; it just stops changing anything.
         spectral.setBand (b, settings);
@@ -151,6 +158,7 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
         const auto iir = fabcutie::dsp::runsAsIir (settings, mode);
         firBands[(size_t) b] = settings;
         firBands[(size_t) b].enabled = settings.enabled && ! iir;
+        bands[(size_t) b] = settings;
 
         settings.enabled = settings.enabled && iir;
         eq.setBand (b, settings);
@@ -158,6 +166,16 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
 
     spectral.setBypassed (bypassed);
     phaseStage.setBands (firBands);
+
+    const auto offset = autoGain->load() >= 0.5f ? autoGainStage.update (bands, currentSampleRate) : 0.0f;
+    autoGainDb.store (offset, std::memory_order_relaxed);
+}
+
+void FabCutieAudioProcessor::pushOutputSettings() noexcept
+{
+    outputStage.setGainDecibels (outputGainDb->load() + autoGainDb.load (std::memory_order_relaxed),
+                                 isBypassed(),
+                                 phaseInvert->load() >= 0.5f);
 }
 
 void FabCutieAudioProcessor::pushPhaseMode() noexcept
@@ -209,6 +227,8 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
                                         static_cast<juce::uint32> (samplesPerBlock),
                                         static_cast<juce::uint32> (getTotalNumOutputChannels()) };
 
+    currentSampleRate = sampleRate;
+
     channelMap = fabcutie::dsp::ChannelMap::fromLayout (getChannelLayoutOfBus (false, 0));
     editorLink.mainChannels.store (channelMap.numChannels);
     eq.setChannelMap (channelMap);
@@ -245,7 +265,7 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     pushCharacterMode();
     characterStage.prepare (sampleRate, samplesPerBlock, getTotalNumOutputChannels());
 
-    outputStage.setGainDecibels (outputGainDb->load(), isBypassed());
+    pushOutputSettings();
     outputStage.prepare (spec);
 }
 
@@ -274,9 +294,11 @@ bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
     return true;
 }
 
-void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    midiLearn.process (midi);
 
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
@@ -332,7 +354,7 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     pushCharacterMode();
     characterStage.process (main);
 
-    outputStage.setGainDecibels (outputGainDb->load(), isBypassed());
+    pushOutputSettings();
     outputStage.process (main);
 
     pushSoloSettings();
@@ -365,21 +387,45 @@ juce::AudioProcessorEditor* FabCutieAudioProcessor::createEditor()
 
 void FabCutieAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = state.copyState().createXml())
+    using namespace fabcutie::workflow;
+
+    // The A/B slot, MIDI map and preset name ride along as child trees.
+    auto copy = state.copyState();
+
+    for (const auto& type : { ABCompare::treeType, MidiLearn::treeType, Presets::treeType })
+        copy.removeChild (copy.getChildWithName (type), nullptr);
+
+    copy.appendChild (abCompare.toTree(), nullptr);
+    copy.appendChild (midiLearn.toTree(), nullptr);
+    copy.appendChild (presets.toTree(), nullptr);
+
+    if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (state.state.getType()))
-        {
-            state.replaceState (juce::ValueTree::fromXml (*xml));
-            registry->notifyChanged(); // the saved name may differ
+    using namespace fabcutie::workflow;
 
-            // Let the host know the session's latency before playback starts.
-            handleAsyncUpdate();
-        }
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+
+    if (xml == nullptr || ! xml->hasTagName (state.state.getType()))
+        return;
+
+    const auto tree = juce::ValueTree::fromXml (*xml);
+    state.replaceState (tree);
+
+    abCompare.fromTree (tree.getChildWithName (ABCompare::treeType));
+    midiLearn.fromTree (tree.getChildWithName (MidiLearn::treeType));
+    presets.fromTree (tree.getChildWithName (Presets::treeType));
+
+    // A restored session starts a fresh undo history.
+    if (juce::MessageManager::existsAndIsCurrentThread())
+        history.reset();
+    registry->notifyChanged(); // the saved name may differ
+
+    // Let the host know the session's latency before playback starts.
+    handleAsyncUpdate();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

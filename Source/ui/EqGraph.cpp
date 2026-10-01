@@ -1,4 +1,5 @@
 #include "EqGraph.h"
+#include "BandClipboard.h"
 #include "Theme.h"
 #include "dsp/CurveFit.h"
 #include "dsp/FilterDesign.h"
@@ -230,7 +231,9 @@ namespace fabcutie::ui
             repaint();
         }
 
-        bool changed = force || ! curvesValid || ! juce::exactlyEqual (sampleRate, curveSampleRate);
+        const auto scale = model.getGainScale();
+        bool changed = force || ! curvesValid || ! juce::exactlyEqual (sampleRate, curveSampleRate)
+                    || ! juce::exactlyEqual (scale, gainScale);
 
         for (int b = 0; b < dsp::maxBands && ! changed; ++b)
             changed = ! sameSettings (latest[(size_t) b], bands[(size_t) b]);
@@ -240,6 +243,7 @@ namespace fabcutie::ui
 
         bands = latest;
         curveSampleRate = sampleRate;
+        gainScale = scale;
         recomputeCurves();
 
         // Bands switched off elsewhere (automation, a preset) leave the selection.
@@ -292,8 +296,11 @@ namespace fabcutie::ui
                 continue;
             }
 
-            const auto analog = ! dsp::runsAsIir (s, phaseMode);
-            const auto design = analog ? dsp::designAnalogBand (s, curveSampleRate) : dsp::designBand (s, curveSampleRate);
+            auto scaled = s;
+            params::applyGainScale (scaled, gainScale);
+
+            const auto analog = ! dsp::runsAsIir (scaled, phaseMode);
+            const auto design = analog ? dsp::designAnalogBand (scaled, curveSampleRate) : dsp::designBand (scaled, curveSampleRate);
             curve.resize ((size_t) numPoints);
 
             for (size_t i = 0; i < (size_t) numPoints; ++i)
@@ -320,7 +327,7 @@ namespace fabcutie::ui
     //==========================================================================
     float EqGraph::nodeDb (const dsp::BandSettings& s) const noexcept
     {
-        return EqModel::usesGain (s.type) ? s.gainDb : 0.0f;
+        return EqModel::usesGain (s.type) ? s.gainDb * gainScale : 0.0f;
     }
 
     int EqGraph::nodeAt (juce::Point<float> pos) const
@@ -653,6 +660,26 @@ namespace fabcutie::ui
             return true;
         }
 
+        if (key == juce::KeyPress ('c', juce::ModifierKeys::commandModifier, 0) && ! selection.isEmpty())
+        {
+            auto sorted = selection;
+            sorted.sort();
+            BandClipboard::copy (model, sorted);
+            return true;
+        }
+
+        if (key == juce::KeyPress ('v', juce::ModifierKeys::commandModifier, 0))
+        {
+            pasteBands();
+            return true;
+        }
+
+        if (key == juce::KeyPress::returnKey && primary >= 0)
+        {
+            if (onEnterValues) onEnterValues (primary);
+            return true;
+        }
+
         if (key == juce::KeyPress ('a', juce::ModifierKeys::commandModifier, 0))
         {
             juce::Array<int> all;
@@ -687,7 +714,9 @@ namespace fabcutie::ui
     void EqGraph::applyNodeDrag()
     {
         const auto ratio = geometry.frequencyForX (dragVirtual.x) / geometry.frequencyForX (dragAnchor.x);
-        const auto dbDelta = geometry.dbForY (dragVirtual.y) - geometry.dbForY (dragAnchor.y);
+        // Nodes sit at the scaled gain, so undo the scale to keep them under the mouse.
+        const auto scale = std::abs (gainScale) < 0.05f ? 1.0f : gainScale;
+        const auto dbDelta = (geometry.dbForY (dragVirtual.y) - geometry.dbForY (dragAnchor.y)) / scale;
 
         // For bands without gain, moving up sharpens the Q: one octave per 60 px.
         const auto qFactor = std::pow (2.0f, (dragAnchor.y - dragVirtual.y) / 60.0f);
@@ -724,6 +753,15 @@ namespace fabcutie::ui
 
         hovered = -1;
         refresh (false);
+    }
+
+    void EqGraph::pasteBands()
+    {
+        const auto pasted = BandClipboard::pasteAsNew (model);
+        refresh (false);
+
+        if (! pasted.isEmpty())
+            setSelection (pasted, pasted.getLast());
     }
 
     void EqGraph::addBandAt (juce::Point<float> pos)
@@ -772,6 +810,10 @@ namespace fabcutie::ui
         menu.addSubMenu ("Placement", placements);
 
         menu.addSeparator();
+        menu.addItem (4, "Enter values...", targets.size() == 1);
+        menu.addItem (2, targets.size() > 1 ? "Copy bands" : "Copy band");
+        menu.addItem (3, "Paste settings onto band", targets.size() == 1 && BandClipboard::count() > 0);
+        menu.addSeparator();
         menu.addItem (1, targets.size() > 1 ? "Remove bands" : "Remove band");
 
         juce::Component::SafePointer<EqGraph> safeThis (this);
@@ -784,6 +826,25 @@ namespace fabcutie::ui
                                     return;
 
                                 auto& m = safeThis->model;
+
+                                if (result == 2)
+                                {
+                                    auto sorted = targets;
+                                    sorted.sort();
+                                    BandClipboard::copy (m, sorted);
+                                    return;
+                                }
+
+                                if (result == 3 || result == 4)
+                                {
+                                    if (result == 3)
+                                        BandClipboard::pasteOnto (m, targets.getFirst());
+                                    else if (safeThis->onEnterValues)
+                                        safeThis->onEnterValues (targets.getFirst());
+
+                                    safeThis->refresh (false);
+                                    return;
+                                }
 
                                 for (auto b : targets)
                                 {
@@ -813,7 +874,11 @@ namespace fabcutie::ui
         for (const auto& s : bands)
             anyEnabled = anyEnabled || s.enabled;
 
+        const auto clipboardBands = BandClipboard::count();
+
         menu.addSeparator();
+        menu.addItem (4, clipboardBands > 1 ? "Paste " + juce::String (clipboardBands) + " bands" : "Paste band",
+                      clipboardBands > 0 && model.findFreeBand() >= 0);
         menu.addItem (2, "Remove all bands", anyEnabled);
 
         juce::Component::SafePointer<EqGraph> safeThis (this);
@@ -827,6 +892,10 @@ namespace fabcutie::ui
                                 if (result == 1)
                                 {
                                     safeThis->addBandAt (pos);
+                                }
+                                else if (result == 4)
+                                {
+                                    safeThis->pasteBands();
                                 }
                                 else if (result == 3)
                                 {

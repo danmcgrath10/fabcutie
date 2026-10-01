@@ -22,6 +22,8 @@ namespace fabcutie::ui
     //   right-click                band or graph menu
     //   Delete / Backspace         remove the selected bands
     //   Alt/Option-click a node    solo the band while the mouse is held
+    //   Cmd/Ctrl-C, Cmd/Ctrl-V     copy the selected bands, paste them as new bands
+    //   Return                     type in the selected band's values
     //   click a spectrum peak      add a bell there and drag it (spectrum grab)
     //
     // With the piano roll on (graph menu), a keyboard runs along the bottom
@@ -104,6 +106,7 @@ namespace fabcutie::ui
         std::function<void()> onSelectionChanged; // primary band changed
         std::function<void()> onBandsChanged;     // any band value changed
         std::function<void (float)> onRangeChanged;
+        std::function<void (int)> onEnterValues; // asks for a value entry box for a band
 
         // EQ Sketch.
         void setSketchMode (bool shouldSketch);
@@ -155,6 +158,7 @@ namespace fabcutie::ui
         void endNodeDrag();
 
         void removeBands (const juce::Array<int>& bands);
+        void pasteBands();
         void addBandAt (juce::Point<float>);
         void showBandMenu (int band);
         void showGraphMenu (juce::Point<float>);
@@ -192,6 +196,7 @@ namespace fabcutie::ui
         // Snapshot of the band values the curves were computed from.
         std::array<dsp::BandSettings, dsp::maxBands> bands {};
         double curveSampleRate = 0.0;
+        float gainScale = 1.0f; // display of the gain scale: curves and nodes show the scaled gains
         bool curvesValid = false;
         dsp::PhaseMode phaseMode = dsp::PhaseMode::zeroLatency;
         bool pianoRollShown = false;

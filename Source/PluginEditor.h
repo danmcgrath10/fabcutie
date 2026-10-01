@@ -11,16 +11,20 @@
 #include "ui/InstanceList.h"
 #include "ui/LevelMeter.h"
 #include "ui/MatchPanel.h"
+#include "ui/MidiLearnMenu.h"
+#include "ui/OutputBar.h"
 #include "ui/SpectrumDisplay.h"
 #include "ui/Theme.h"
+#include "ui/WorkflowBar.h"
 
 class FabCutieAudioProcessor;
 
-// The main window: a header with the instance list, EQ Sketch and EQ Match,
-// character, output gain and bypass, the frequency graph with the spectrum
-// analyzer behind it and the output meter beside it, the analyzer bar and
-// phase mode underneath, and a band panel that floats next to the selected
-// node.
+// The main window: a header with the instance list, undo, presets, A/B, EQ
+// Sketch and EQ Match, output gain and bypass; the frequency graph with the
+// spectrum analyzer behind it and the output meter beside it; a bar
+// underneath with the analyzer toggles, character, phase mode, gain scale,
+// auto gain and phase invert; and a band panel that floats next to the
+// selected node.
 //
 // The window normally shows its own instance, but the instance list can
 // point it at any other FabCutie in the session: everything below the
@@ -36,6 +40,7 @@ public:
     void paint (juce::Graphics&) override;
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -79,7 +84,7 @@ private:
     // After the controls it attaches to, so it is destroyed first.
     std::unique_ptr<View> view;
 
-    bool compactHeader = false; // narrow windows drop the combo box labels
+    bool compactHeader = false; // narrow windows drop the version and the OUTPUT label
 
     juce::TooltipWindow tooltips { this, 700 };
 

@@ -19,6 +19,7 @@ namespace fabcutie::params
     inline constexpr int dynamicsVersion = 5; // per-band dynamic EQ parameters
     inline constexpr int phaseVersion = 6; // phase mode and linear phase resolution
     inline constexpr int spectralVersion = 7; // per-band spectral dynamics switch
+    inline constexpr int workflowVersion = 8; // auto gain, gain scale, phase invert
 
     namespace id
     {
@@ -28,6 +29,9 @@ namespace fabcutie::params
         inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
         inline constexpr auto phaseMode  = "phaseMode";
         inline constexpr auto linearResolution = "linearResolution"; // kernel length (and latency) in linear phase
+        inline constexpr auto autoGain    = "autoGain";    // offset the output by the EQ's average gain change
+        inline constexpr auto gainScale   = "gainScale";   // percent: scales every band's gain and dynamic range
+        inline constexpr auto phaseInvert = "phaseInvert"; // flips the output polarity
     }
 
     namespace range
@@ -48,6 +52,9 @@ namespace fabcutie::params
         inline constexpr float attackMaxMs = 500.0f;
         inline constexpr float releaseMinMs = 5.0f;
         inline constexpr float releaseMaxMs = 5000.0f;
+
+        inline constexpr float gainScaleMinPercent = -100.0f;
+        inline constexpr float gainScaleMaxPercent = 200.0f;
     }
 
     // Per-band parameter IDs look like "b07_freq" (bands are numbered from 1).
@@ -73,6 +80,18 @@ namespace fabcutie::params
     juce::StringArray detectorFilterNames();
 
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+
+    // Gain scale applied to a band: its gain and dynamic range, as a factor
+    // (1 = 100 %). The processor and the graph both use this.
+    inline void applyGainScale (dsp::BandSettings& s, float scale) noexcept
+    {
+        s.gainDb *= scale;
+        s.dynamics.rangeDb *= scale;
+    }
+
+    // Parses a frequency typed by hand: "1000", "1.2k", "2 kHz" or a note
+    // name such as "A4" or "C#2".
+    float parseFrequency (const juce::String& text);
 
     // Cached raw parameter pointers for reading band settings on the audio thread.
     struct BandParameterRefs

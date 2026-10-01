@@ -1,4 +1,5 @@
 #include "Parameters.h"
+#include "dsp/Notes.h"
 
 namespace fabcutie::params
 {
@@ -23,8 +24,7 @@ namespace fabcutie::params
 
         float stringToFrequency (const juce::String& text)
         {
-            const auto value = text.getFloatValue();
-            return text.containsIgnoreCase ("k") ? value * 1000.0f : value;
+            return parseFrequency (text);
         }
 
         // Spread the default band frequencies log-evenly from 30 Hz to 16 kHz,
@@ -58,6 +58,28 @@ namespace fabcutie::params
 
             return "";
         }
+    }
+
+    float parseFrequency (const juce::String& input)
+    {
+        const auto text = input.trim();
+
+        // A note name: letter, optional sharp or flat, octave (C4 is middle C).
+        if (text.isNotEmpty() && juce::String ("ABCDEFGabcdefg").containsChar (text[0]))
+        {
+            static constexpr int pitchClasses[] { 9, 11, 0, 2, 4, 5, 7 }; // A B C D E F G
+            auto pitch = pitchClasses[juce::CharacterFunctions::toUpperCase (text[0]) - 'A'];
+            auto rest = text.substring (1).trim();
+
+            if (rest.startsWithChar ('#'))      { ++pitch; rest = rest.substring (1); }
+            else if (rest.startsWithChar ('b')) { --pitch; rest = rest.substring (1); }
+
+            if (rest.containsOnly ("-0123456789") && rest.containsAnyOf ("0123456789"))
+                return (float) dsp::frequencyForNote ((rest.getIntValue() + 1) * 12 + pitch);
+        }
+
+        const auto value = text.getFloatValue();
+        return text.containsIgnoreCase ("k") ? value * 1000.0f : value;
     }
 
     juce::String bandParamId (int bandIndex, BandParam param)
@@ -158,6 +180,25 @@ namespace fabcutie::params
             linearResolutionNames(),
             dsp::defaultLinearResolution,
             juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { id::autoGain, workflowVersion },
+            "Auto Gain",
+            false));
+
+        layout.add (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { id::gainScale, workflowVersion },
+            "Gain Scale",
+            juce::NormalisableRange<float> (range::gainScaleMinPercent, range::gainScaleMaxPercent, 1.0f),
+            100.0f,
+            juce::AudioParameterFloatAttributes()
+                .withLabel ("%")
+                .withStringFromValueFunction ([] (float v, int) { return juce::String (juce::roundToInt (v)) + " %"; })));
+
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { id::phaseInvert, workflowVersion },
+            "Phase Invert",
+            false));
 
         const auto frequencyAttributes = juce::AudioParameterFloatAttributes()
                                              .withLabel ("Hz")

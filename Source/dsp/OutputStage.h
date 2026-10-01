@@ -4,7 +4,7 @@
 
 namespace fabcutie::dsp
 {
-    // Final gain stage with click-free smoothing for gain and bypass.
+    // Final gain stage with click-free smoothing for gain, polarity and bypass.
     // The EQ band chain will sit in front of this in PluginProcessor.
     class OutputStage
     {
@@ -15,9 +15,11 @@ namespace fabcutie::dsp
             gain.setCurrentAndTargetValue (targetGain);
         }
 
-        void setGainDecibels (float db, bool bypassed)
+        // An inverted polarity ramps through zero to the negative gain, so
+        // flipping it does not click.
+        void setGainDecibels (float db, bool bypassed, bool invertPolarity = false)
         {
-            targetGain = bypassed ? 1.0f : juce::Decibels::decibelsToGain (db);
+            targetGain = bypassed ? 1.0f : juce::Decibels::decibelsToGain (db) * (invertPolarity ? -1.0f : 1.0f);
             gain.setTargetValue (targetGain);
         }
 

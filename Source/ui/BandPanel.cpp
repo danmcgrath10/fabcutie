@@ -143,6 +143,21 @@ namespace fabcutie::ui
         repaint();
     }
 
+    void BandPanel::forEachControl (const std::function<void (juce::Component&, params::BandParam)>& callback)
+    {
+        const std::pair<juce::Component*, BandParam> controls[] {
+            { &frequency.slider, BandParam::frequency }, { &gain.slider, BandParam::gain }, { &q.slider, BandParam::q },
+            { &threshold.slider, BandParam::threshold }, { &range.slider, BandParam::range },
+            { &attack.slider, BandParam::attack }, { &release.slider, BandParam::release },
+            { &typeBox, BandParam::type }, { &slopeBox, BandParam::slope }, { &placementBox, BandParam::placement },
+            { &dynamicButton, BandParam::dynamic }, { &sourceBox, BandParam::detectorSource },
+            { &detectorFilterBox, BandParam::detectorFilter }
+        };
+
+        for (auto [component, p] : controls)
+            callback (*component, p);
+    }
+
     void BandPanel::timerCallback()
     {
         updateEnablement();

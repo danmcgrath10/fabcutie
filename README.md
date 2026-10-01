@@ -4,7 +4,7 @@ An open-source parametric EQ plugin for macOS and Windows (AU, VST3, CLAP and St
 
 FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q 3. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
 
-> **Status:** the EQ engine, the draw-on-the-graph interface and the real-time spectrum analyzer work. Workflow features (undo, A/B, presets) are next.
+> **Status:** the EQ engine, the draw-on-the-graph interface, the real-time spectrum analyzer and the workflow features (undo, A/B, presets, MIDI learn) work.
 
 ## What it does
 
@@ -26,6 +26,7 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Spectrum grab: hover a peak in the spectrum, click it and drag to cut (or boost) it right away.
 - Intelligent band solo: hear only the part of the spectrum a band works on.
 - Output level meter with peak hold and a resettable peak readout.
+- Undo and redo, A/B compare, factory and user presets, copy and paste of bands, typed values, auto gain, gain scale, phase invert, window sizes and MIDI learn (see [Workflow](#workflow)).
 
 ## Using the graph
 
@@ -36,12 +37,15 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 | Scroll over a node | Q. With Alt/Option held, steps a cut's slope |
 | Double-click a node | Remove the band |
 | Cmd/Ctrl/Shift-click, or drag on empty space | Select several nodes, then drag them together |
-| Right-click a node | Filter type, slope, placement, remove |
-| Right-click empty space | Add a band, display range, remove all |
+| Right-click a node | Filter type, slope, placement, enter values, copy, paste settings, remove |
+| Right-click empty space | Add a band, display range, paste bands, remove all |
 | Delete / Backspace | Remove the selected bands |
 | `±12 dB` button (top right) | Cycle the display range: ±3, ±6, ±12, ±30 dB |
 | Hover a spectrum peak, then click and drag | Spectrum grab: adds a bell on the peak and drags it |
 | Alt/Option-click a node and hold | Solo the band while the mouse is down |
+| Cmd/Ctrl-C, Cmd/Ctrl-V | Copy the selected bands; paste them as new bands (also between FabCutie instances) |
+| Return, or right-click a node → Enter values... | Type the band's frequency, gain and Q |
+| Cmd/Ctrl-Z, Cmd/Ctrl-Shift-Z | Undo, redo |
 
 The selected band's panel floats over the graph: type, slope, placement, frequency/gain/Q knobs (double-click a knob to reset it) and a Solo button, with the dynamics controls on a second row. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
 
@@ -54,7 +58,7 @@ FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the 
 The button next to the version number names the instance the window is showing (the host's track name, or "FabCutie 1", "FabCutie 2"...). Click it to list every FabCutie in the session:
 
 - **Show** draws that instance's curve behind this one's, in its own colour, with a legend in the corner. Use it to carve space between tracks.
-- **Edit** points this window at that instance: the graph, band panel, analyzer, meter, output, bypass and character all control it, and a coloured frame says which one you are editing. **Back** returns to this window's own instance.
+- **Edit** points this window at that instance: the graph, band panel, analyzer, meter, presets, undo, A/B, output bar, bypass, character and phase mode all control it, and a coloured frame says which one you are editing. **Back** returns to this window's own instance.
 - Double-click a name to rename the instance (saved with the session). Clear the name to go back to the track name.
 
 Instances find each other when the host loads them into the same process, as Logic Pro and most DAWs do. A host that runs every plug-in in its own sandboxed process shows each instance on its own.
@@ -79,10 +83,25 @@ The sidechain input stays mono or stereo. Surround always runs at Zero Latency, 
 2. **EQ engine** (done): up to 24 bands of bell, shelf, cut, notch and tilt filters, slopes up to 96 dB/oct, stereo or mid/side per band, smoothed parameters.
 3. **Interface** (done): interactive frequency graph with draggable nodes and a floating band panel.
 4. **Analyzer** (done): pre/post/sidechain spectrum, range, speed, tilt, resolution, freeze, spectrum grab, collision detection, band solo, output meter.
-5. **Workflow:** undo/redo, A/B, presets, copy and paste of bands, value entry, auto gain, gain scale, phase invert, MIDI learn.
+5. **Workflow** (done): undo/redo, A/B, presets, copy and paste of bands, value entry, auto gain, gain scale, phase invert, MIDI learn.
 6. **Filter extras** (done): All Pass and Flat Tilt shapes, brickwall slope, piano roll.
-7. **Dynamic EQ** with sidechain (done) and character modes (done), then phase modes (linear and natural phase), EQ Sketch/Match and spectral dynamics.
+7. **Dynamic EQ** with sidechain, character modes, phase modes (linear and natural phase), EQ Sketch/Match and spectral dynamics (all done).
 8. **Session features** (done): instance list, CLAP format, surround up to 9.1.6.
+
+## Workflow
+
+The header holds **undo** and **redo**, the **preset browser** (arrows step through presets, the name opens the menu), **A / B** and **A>B**, and a **•••** menu.
+
+- **Undo / redo** (Cmd/Ctrl-Z, Cmd/Ctrl-Shift-Z) covers every edit made in the plugin window: a whole drag is one step, as is an A/B switch or a preset load. Host automation is not recorded, and bypass is left out.
+- **A/B:** two complete settings. Click **B** to switch (the first time it starts as a copy of A), **A>B** copies the current slot to the other. Both are saved with the session.
+- **Presets:** a few factory presets, plus your own from **Save preset...**. User presets are files in `~/Library/Audio/Presets/FabCutie` on macOS (the app data folder `FabCutie/Presets` on Windows), so they are shared by every session and can be copied between machines. Presets older than a feature load with that feature at its default.
+- **Copy and paste bands:** see the table above. Pasting settings onto a band replaces its type, frequency, gain, Q, slope, placement and dynamics.
+- **Typing values:** click a knob's value in the band panel, or press Return on a selected node. Frequencies take Hz, `k` for kHz (`2.5k`) or a note name (`A4`, `C#2`).
+- **Gain scale** (bottom right): scales the gain of every bell, shelf and tilt, and each dynamic band's range. 100 % leaves them as set, 0 % flattens the EQ, negative values invert it, up to 200 %. The graph shows the scaled curve.
+- **Auto gain:** offsets the output by the average level change of the bells, shelves and tilts, worked out from the curve (not measured, so it never pumps). Cuts, notches and band passes are not compensated. The button shows the offset it applies.
+- **Ø:** flips the output polarity.
+- **Window size:** drag the corner, or pick Small, Medium, Large or Extra large from the **•••** menu. The size is saved with the session.
+- **MIDI learn:** right-click any knob or menu in the window, choose **MIDI Learn** and move a controller. That CC (on any channel) then drives the control; right-click again to forget it, or clear them all from the **•••** menu. The assignments are saved with the session. In Logic Pro, Audio Unit effects do not receive MIDI, so use Logic's own controller assignments (Learn mode) there; MIDI learn works in the VST3 and Standalone versions.
 
 ## The analyzer
 
@@ -98,7 +117,7 @@ These settings are saved with the session. To feed the sidechain in Logic Pro, p
 
 ## Phase modes
 
-The **PHASE** menu at the right end of the bar under the graph picks how the bands are realised:
+The phase menu in the bar under the graph (next to the character menu) picks how the bands are realised:
 
 - **Zero Latency** (default): minimum-phase IIR filters, no latency. Like every digital EQ of this kind, curves near Nyquist narrow slightly ("cramping").
 - **Natural Phase**: an FIR filter built from the analog prototypes' magnitude and phase, so the EQ behaves like an analog one all the way up to Nyquist, with no cramping. Latency is about 7 ms (320 samples at 44.1/48 kHz).
