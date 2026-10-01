@@ -13,6 +13,12 @@ namespace fabcutie::dsp
         AudioTap post;     // output, after the EQ and output gain
         AudioTap external; // the sidechain input, when the host connects one
 
+        // EQ Match listens on its own taps (the analyzer drains the others):
+        // the input before the EQ, and the sidechain as the reference.
+        AudioTap matchSource;
+        AudioTap matchReference;
+        std::atomic<bool> matchLearning { false };
+
         PeakMeter outputMeter;
 
         // Set by the editor while an analyzer is showing, so the audio thread

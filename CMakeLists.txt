@@ -66,7 +66,8 @@ target_sources(FabCutie PRIVATE
     Source/ui/BandPanel.cpp
     Source/ui/SpectrumDisplay.cpp
     Source/ui/LevelMeter.cpp
-    Source/ui/AnalyzerBar.cpp)
+    Source/ui/AnalyzerBar.cpp
+    Source/ui/MatchPanel.cpp)
 
 target_include_directories(FabCutie PRIVATE Source)
 
@@ -133,4 +134,17 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
+
+    juce_add_console_app(FabCutieSmartToolsTests PRODUCT_NAME "FabCutieSmartToolsTests")
+    target_sources(FabCutieSmartToolsTests PRIVATE Tests/SmartToolsTests.cpp)
+    target_include_directories(FabCutieSmartToolsTests PRIVATE Source)
+    target_compile_definitions(FabCutieSmartToolsTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieSmartToolsTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME SmartToolsTests COMMAND FabCutieSmartToolsTests)
 endif()

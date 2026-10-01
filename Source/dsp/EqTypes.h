@@ -66,6 +66,11 @@ namespace fabcutie::dsp
         float releaseMs = 120.0f;
         DetectorSource source = DetectorSource::internal;
         DetectorFilter filter = DetectorFilter::band;
+
+        // Spectral: instead of moving the whole band's gain, act bin by bin
+        // (see SpectralDynamics), so only the frequencies inside the band
+        // that cross the threshold move, e.g. one resonance at a time.
+        bool spectral = false;
     };
 
     // Cut slopes in dB/octave. A slope of 6 * n dB/oct is an order n filter.

@@ -8,6 +8,7 @@
 #include "dsp/Character.h"
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
+#include "dsp/SpectralDynamics.h"
 #include "ui/EqModel.h"
 
 class FabCutieAudioProcessor final : public juce::AudioProcessor
@@ -57,6 +58,8 @@ private:
     std::array<fabcutie::params::BandParameterRefs, fabcutie::dsp::maxBands> bandParams;
 
     fabcutie::dsp::EqEngine eq;
+    fabcutie::dsp::SpectralDynamics spectral;
+    bool spectralRunning = false;
     fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
     fabcutie::dsp::BandSolo solo;
@@ -67,6 +70,7 @@ private:
     void pushBandSettings() noexcept;
     void pushSoloSettings() noexcept;
     void pushCharacterMode() noexcept;
+    void updateSpectralStage() noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessor)
 };

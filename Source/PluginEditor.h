@@ -7,12 +7,14 @@
 #include "ui/EqGraph.h"
 #include "ui/EqModel.h"
 #include "ui/LevelMeter.h"
+#include "ui/MatchPanel.h"
 #include "ui/SpectrumDisplay.h"
 #include "ui/Theme.h"
 
 class FabCutieAudioProcessor;
 
-// The main window: a header with output gain and bypass, the frequency graph
+// The main window: a header with the EQ Sketch and EQ Match switches,
+// character, output gain and bypass, the frequency graph
 // with the spectrum analyzer behind it and the output meter beside it, the
 // analyzer bar underneath, and a band panel that floats next to the selected
 // node.
@@ -31,6 +33,7 @@ private:
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     void updateBandPanel();
+    void updateMatchPanel();
     void applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings&);
 
     fabcutie::ui::LookAndFeel lookAndFeel;
@@ -43,10 +46,12 @@ private:
     fabcutie::ui::SpectrumDisplay spectrum;
     fabcutie::ui::LevelMeter meter;
     fabcutie::ui::AnalyzerBar analyzerBar;
+    fabcutie::ui::MatchPanel matchPanel;
 
     juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
     juce::TextButton bypassButton { "Bypass" };
     juce::ComboBox characterBox;
+    juce::TextButton sketchButton { "Sketch" }, matchButton { "Match" };
 
     std::unique_ptr<SliderAttachment> outputGainAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;

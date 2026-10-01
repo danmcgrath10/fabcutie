@@ -121,7 +121,8 @@ namespace fabcutie::dsp
 
         bool listensToSidechain() const noexcept
         {
-            return target.dynamics.enabled && target.dynamics.source == DetectorSource::external;
+            return target.dynamics.enabled && ! target.dynamics.spectral
+                && target.dynamics.source == DetectorSource::external;
         }
 
         // How far the dynamics currently move the band's gain, in dB.
@@ -180,7 +181,9 @@ namespace fabcutie::dsp
         void updateDynamics (const float* const* detector, int numDetectorChannels, int start, int n) noexcept
         {
             const auto& d = target.dynamics;
-            const auto on = d.enabled && current.enabled && supportsDynamics (current.type);
+            // Spectral dynamics run in SpectralDynamics instead; the band
+            // itself then stays static.
+            const auto on = d.enabled && ! d.spectral && current.enabled && supportsDynamics (current.type);
 
             if (! on && juce::exactlyEqual (dynamicGainDb, 0.0f))
                 return;

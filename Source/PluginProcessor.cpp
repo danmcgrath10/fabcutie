@@ -26,9 +26,16 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
     {
         auto settings = bandParams[(size_t) b].read();
+
+        // The spectral stage keeps running (and its latency stays put)
+        // while bypassed; it just stops changing anything.
+        spectral.setBand (b, settings);
+
         settings.enabled = settings.enabled && ! bypassed;
         eq.setBand (b, settings);
     }
+
+    spectral.setBypassed (bypassed);
 }
 
 void FabCutieAudioProcessor::pushSoloSettings() noexcept
@@ -50,6 +57,24 @@ void FabCutieAudioProcessor::pushCharacterMode() noexcept
     characterStage.setMode ((fabcutie::dsp::CharacterMode) juce::jlimit (0, fabcutie::dsp::numCharacterModes - 1, index));
 }
 
+void FabCutieAudioProcessor::updateSpectralStage() noexcept
+{
+    // The spectral stage delays the signal, so it only runs (and the plugin
+    // only reports its latency) while a band uses it. Starting it clears out
+    // whatever it held from the last time.
+    const auto wanted = spectral.isActive();
+
+    if (wanted == spectralRunning)
+        return;
+
+    spectralRunning = wanted;
+
+    if (wanted)
+        spectral.reset();
+
+    setLatencySamples (wanted ? fabcutie::dsp::SpectralDynamics::latencySamples : 0);
+}
+
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const juce::dsp::ProcessSpec spec { sampleRate,
@@ -58,6 +83,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushBandSettings();
     eq.prepare (sampleRate);
+    spectral.prepare (sampleRate);
+    spectralRunning = ! spectral.isActive();
+    updateSpectralStage();
 
     pushSoloSettings();
     solo.prepare (sampleRate);
@@ -121,11 +149,23 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             editorLink.external.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
     }
 
+    if (editorLink.matchLearning.load (std::memory_order_relaxed))
+    {
+        editorLink.matchSource.push (main.getArrayOfReadPointers(), numChannels, numSamples);
+
+        if (hasSidechain)
+            editorLink.matchReference.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
+    }
+
     pushBandSettings();
     eq.process (main, hasSidechain ? &sidechain : nullptr);
 
+    updateSpectralStage();
+    if (spectralRunning)
+        spectral.process (main, hasSidechain ? &sidechain : nullptr);
+
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
-        dynamicGains[(size_t) b].store (eq.getDynamicGainDb (b), std::memory_order_relaxed);
+        dynamicGains[(size_t) b].store (eq.getDynamicGainDb (b) + spectral.getGainDb (b), std::memory_order_relaxed);
 
     pushCharacterMode();
     characterStage.process (main);

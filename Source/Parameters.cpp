@@ -53,6 +53,7 @@ namespace fabcutie::params
                 case BandParam::release:        return "release";
                 case BandParam::detectorSource: return "scsrc";
                 case BandParam::detectorFilter: return "scfilt";
+                case BandParam::spectral:       return "spec";
             }
 
             return "";
@@ -221,6 +222,10 @@ namespace fabcutie::params
                 juce::ParameterID { bandParamId (b, BandParam::detectorFilter), dynamicsVersion },
                 name + "Sidechain Filter", detectorFilterNames(), (int) dyn.filter));
 
+            group->addChild (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { bandParamId (b, BandParam::spectral), spectralVersion },
+                name + "Spectral", dyn.spectral));
+
             layout.add (std::move (group));
         }
 
@@ -250,6 +255,7 @@ namespace fabcutie::params
         release   = get (BandParam::release);
         detectorSource = get (BandParam::detectorSource);
         detectorFilter = get (BandParam::detectorFilter);
+        spectral  = get (BandParam::spectral);
     }
 
     dsp::BandSettings BandParameterRefs::read() const noexcept
@@ -271,6 +277,7 @@ namespace fabcutie::params
         d.releaseMs   = release->load();
         d.source      = (dsp::DetectorSource) juce::jlimit (0, dsp::numDetectorSources - 1, juce::roundToInt (detectorSource->load()));
         d.filter      = (dsp::DetectorFilter) juce::jlimit (0, dsp::numDetectorFilters - 1, juce::roundToInt (detectorFilter->load()));
+        d.spectral    = spectral->load() >= 0.5f;
         return s;
     }
 }

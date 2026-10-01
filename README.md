@@ -15,7 +15,10 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
 - Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
 - Sidechain per dynamic band: listen to the band's own input or the plugin's external sidechain input, filtered to the band's region (band pass for bells, low or high pass for shelves) or wide open.
-- Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
+- Spectral dynamics: switch on **SPEC** next to **DYN** and the band works bin by bin, so only the frequencies inside it that cross the threshold move (one ringing resonance, not the whole band). The threshold reads like the analyzer: a full-scale sine is 0 dB. While any band is spectral the plugin reports 2048 samples of latency.
+- **EQ Sketch:** press **Sketch** in the header and draw the curve you want on the graph; on release it becomes up to 8 bells and shelves in the free band slots. Esc leaves sketch mode.
+- **EQ Match:** press **Match**, pick a reference (the **Sidechain** input, or a **Captured** one: play the reference and press **Capture**), play your track with **Learn** on, then **Apply** to add up to 12 bands that move its tonal balance towards the reference. The level difference is ignored, **Amount** scales the result, and the captured reference is saved with the session.
+- Zero latency otherwise. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 - Real-time spectrum analyzer behind the curves: input (Pre), output (Post) and sidechain spectra, with adjustable range, speed, tilt and resolution, and Freeze.
 - Collision detection: red shading where the output and the sidechain signal crowd the same frequencies.
 - Spectrum grab: hover a peak in the spectrum, click it and drag to cut (or boost) it right away.

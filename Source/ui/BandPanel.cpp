@@ -27,6 +27,11 @@ namespace fabcutie::ui
         dynamicButton.setTooltip ("Dynamic: move the band's gain with the level of the signal");
         addAndMakeVisible (dynamicButton);
 
+        spectralButton.setClickingTogglesState (true);
+        spectralButton.setTooltip ("Spectral: act on each frequency inside the band on its own, "
+                                   "so only the parts that cross the threshold move (adds latency)");
+        addAndMakeVisible (spectralButton);
+
         frequency.name = "FREQ";
         gain.name = "GAIN";
         q.name = "Q";
@@ -83,6 +88,7 @@ namespace fabcutie::ui
         slopeAttachment.reset();
         placementAttachment.reset();
         dynamicAttachment.reset();
+        spectralAttachment.reset();
         sourceAttachment.reset();
         detectorFilterAttachment.reset();
 
@@ -101,6 +107,7 @@ namespace fabcutie::ui
         sourceAttachment    = std::make_unique<ComboBoxAttachment> (state, id (BandParam::detectorSource), sourceBox);
         detectorFilterAttachment = std::make_unique<ComboBoxAttachment> (state, id (BandParam::detectorFilter), detectorFilterBox);
         dynamicAttachment   = std::make_unique<ButtonAttachment> (state, id (BandParam::dynamic), dynamicButton);
+        spectralAttachment  = std::make_unique<ButtonAttachment> (state, id (BandParam::spectral), spectralButton);
 
         const std::pair<Knob*, BandParam> knobs[] { { &frequency, BandParam::frequency },
                                                      { &gain, BandParam::gain },
@@ -157,7 +164,11 @@ namespace fabcutie::ui
         dynamicButton.setEnabled (canBeDynamic);
 
         auto changed = false;
-        for (juce::Component* c : { (juce::Component*) &sourceBox, (juce::Component*) &detectorFilterBox,
+        // Spectral detection always looks at each bin, so the sidechain
+        // filter choice does not apply.
+        detectorFilterBox.setEnabled (dynamic && ! settings.dynamics.spectral);
+
+        for (juce::Component* c : { (juce::Component*) &sourceBox, (juce::Component*) &spectralButton,
                                     (juce::Component*) &threshold.slider, (juce::Component*) &range.slider,
                                     (juce::Component*) &attack.slider, (juce::Component*) &release.slider })
         {
@@ -250,6 +261,11 @@ namespace fabcutie::ui
 
         layoutRow (eqRow, { &typeBox, &slopeBox, &placementBox }, { &frequency, &gain, &q });
         layoutRow (dynamicRow, { &dynamicButton, &sourceBox, &detectorFilterBox }, { &threshold, &range, &attack, &release });
+
+        // DYN and SPEC share the first slot.
+        auto toggles = dynamicButton.getBounds();
+        dynamicButton.setBounds (toggles.removeFromLeft (toggles.getWidth() / 2 - 2));
+        spectralButton.setBounds (toggles.withTrimmedLeft (4));
 
         for (auto* knob : { &threshold, &range, &attack, &release })
             knob->slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, knob->slider.getWidth(), 16);

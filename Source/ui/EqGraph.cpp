@@ -1,5 +1,6 @@
 #include "EqGraph.h"
 #include "Theme.h"
+#include "dsp/CurveFit.h"
 #include "dsp/FilterDesign.h"
 #include "dsp/Notes.h"
 
@@ -315,6 +316,13 @@ namespace fabcutie::ui
     //==========================================================================
     void EqGraph::mouseMove (const juce::MouseEvent& e)
     {
+        if (sketchMode)
+        {
+            setMouseCursor (juce::MouseCursor::CrosshairCursor);
+            updateGrabPeak (std::nullopt);
+            return;
+        }
+
         const auto band = nodeAt (e.position);
 
         if (band != hovered)
@@ -371,6 +379,15 @@ namespace fabcutie::ui
             const auto next = current == rangeChoices.end() || current + 1 == rangeChoices.end() ? rangeChoices.begin()
                                                                                                     : current + 1;
             setRangeDb (*next);
+            return;
+        }
+
+        if (sketchMode)
+        {
+            dragMode = DragMode::sketch;
+            sketchDb.assign ((size_t) juce::jmax (1, getWidth()), std::numeric_limits<float>::quiet_NaN());
+            lastSketchColumn = -1;
+            sketchTo (e.position);
             return;
         }
 
@@ -453,6 +470,10 @@ namespace fabcutie::ui
             lastMouse = e.position;
             applyNodeDrag();
         }
+        else if (dragMode == DragMode::sketch)
+        {
+            sketchTo (e.position);
+        }
         else if (dragMode == DragMode::lasso)
         {
             lasso = juce::Rectangle<float> (lassoStart, e.position);
@@ -477,6 +498,9 @@ namespace fabcutie::ui
             setSoloBand (soloBeforeHold);
         }
 
+        if (dragMode == DragMode::sketch)
+            finishSketch();
+
         if (dragMode == DragMode::lasso)
         {
             if (lasso.isEmpty() && ! e.mouseWasDraggedSinceMouseDown() && selectionBeforeLasso.isEmpty())
@@ -491,7 +515,7 @@ namespace fabcutie::ui
 
     void EqGraph::mouseDoubleClick (const juce::MouseEvent& e)
     {
-        if (e.mods.isPopupMenu())
+        if (e.mods.isPopupMenu() || sketchMode)
             return;
 
         const auto band = nodeAt (e.position);
@@ -550,6 +574,12 @@ namespace fabcutie::ui
         if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey) && ! selection.isEmpty())
         {
             removeBands (selection);
+            return true;
+        }
+
+        if (key == juce::KeyPress::escapeKey && sketchMode)
+        {
+            setSketchMode (false);
             return true;
         }
 
@@ -791,12 +821,13 @@ namespace fabcutie::ui
 
         drawRangeButton (g);
         drawSoloBanner (g);
+        drawSketch (g);
 
         bool anyEnabled = false;
         for (const auto& s : bands)
             anyEnabled = anyEnabled || s.enabled;
 
-        if (! anyEnabled)
+        if (! anyEnabled && ! sketchMode)
         {
             g.setColour (colours::textDim.withAlpha (0.45f));
             g.setFont (juce::FontOptions (15.0f));
@@ -1028,6 +1059,147 @@ namespace fabcutie::ui
         g.setColour (juce::Colours::black.withAlpha (0.85f));
         g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
         g.drawText ("SOLO  Band " + juce::String (lastSolo + 1), box, juce::Justification::centred);
+    }
+
+    //==========================================================================
+    void EqGraph::setSketchMode (bool shouldSketch)
+    {
+        if (shouldSketch == sketchMode)
+            return;
+
+        if (dragMode == DragMode::sketch)
+            dragMode = DragMode::none;
+
+        sketchMode = shouldSketch;
+        sketchDb.clear();
+        updateGrabPeak (std::nullopt);
+        setMouseCursor (sketchMode ? juce::MouseCursor::CrosshairCursor : juce::MouseCursor::NormalCursor);
+        repaint();
+
+        if (onSketchModeChanged) onSketchModeChanged (sketchMode);
+    }
+
+    void EqGraph::sketchTo (juce::Point<float> pos)
+    {
+        const auto columns = (int) sketchDb.size();
+        if (columns == 0)
+            return;
+
+        const auto column = juce::jlimit (0, columns - 1, juce::roundToInt (pos.x));
+        const auto db = juce::jlimit (-geometry.rangeDb, geometry.rangeDb, geometry.dbForY (pos.y));
+
+        // Fill every column passed since the last point, so quick strokes
+        // leave no gaps.
+        if (lastSketchColumn >= 0 && lastSketchColumn != column)
+        {
+            const auto from = sketchDb[(size_t) lastSketchColumn];
+            const auto step = column > lastSketchColumn ? 1 : -1;
+
+            for (auto c = lastSketchColumn + step; c != column; c += step)
+            {
+                const auto t = (float) (c - lastSketchColumn) / (float) (column - lastSketchColumn);
+                sketchDb[(size_t) c] = from + t * (db - from);
+            }
+        }
+
+        sketchDb[(size_t) column] = db;
+        lastSketchColumn = column;
+        repaint();
+    }
+
+    void EqGraph::finishSketch()
+    {
+        auto sampleRate = sampleRateSource ? sampleRateSource() : 0.0;
+        if (sampleRate <= 0.0) sampleRate = 48000.0;
+
+        const auto hz = dsp::curvefit::logFrequencies (20.0, std::min (20000.0, 0.45 * sampleRate), 12);
+        auto target = model.getTotalCurve (hz, sampleRate);
+
+        // Where something was drawn the drawn curve is the target; elsewhere
+        // the EQ stays as it is.
+        const auto existing = target;
+        auto first = -1, last = -1;
+
+        for (size_t i = 0; i < hz.size(); ++i)
+        {
+            const auto column = juce::roundToInt (geometry.xForFrequency ((float) hz[i]));
+            if (column < 0 || column >= (int) sketchDb.size())
+                continue;
+
+            const auto db = sketchDb[(size_t) column];
+            if (std::isnan (db))
+                continue;
+
+            target[i] = db;
+            if (first < 0) first = (int) i;
+            last = (int) i;
+        }
+
+        sketchDb.clear();
+        lastSketchColumn = -1;
+        repaint();
+
+        // A click or a tiny stroke is not a curve.
+        if (first < 0 || last - first < 2)
+            return;
+
+        // Past the ends of the stroke, ease back to the existing curve over
+        // an octave instead of jumping, which would take a pile of narrow
+        // bands to draw.
+        const auto ease = [&] (int edge, int i)
+        {
+            const auto octaves = std::abs (std::log2 (hz[(size_t) i] / hz[(size_t) edge]));
+            const auto t = std::cos (juce::MathConstants<double>::pi * std::min (1.0, octaves)) * 0.5 + 0.5;
+            target[(size_t) i] = existing[(size_t) i] + t * (target[(size_t) edge] - existing[(size_t) edge]);
+        };
+
+        for (int i = 0; i < first; ++i)                ease (first, i);
+        for (int i = last + 1; i < (int) hz.size(); ++i) ease (last, i);
+
+        const auto added = model.addBandsForCurve (hz, target, sketchMaxBands, sampleRate);
+        refresh (false);
+
+        // Show the new nodes as selected without opening the band panel.
+        if (! added.isEmpty())
+            setSelection (added, -1);
+    }
+
+    void EqGraph::drawSketch (juce::Graphics& g)
+    {
+        if (! sketchMode)
+            return;
+
+        const auto hint = juce::Rectangle<float> (plot.getCentreX() - 150.0f, 6.0f, 300.0f, 20.0f);
+        g.setColour (colours::accent.withAlpha (0.18f));
+        g.fillRoundedRectangle (hint, 4.0f);
+        g.setColour (colours::accent);
+        g.setFont (juce::FontOptions (11.5f, juce::Font::bold));
+        g.drawText (model.findFreeBand() >= 0 ? "SKETCH  Draw the curve you want" : "SKETCH  No free bands left",
+                    hint, juce::Justification::centred);
+
+        juce::Path path;
+        auto drawing = false;
+
+        for (size_t c = 0; c < sketchDb.size(); ++c)
+        {
+            const auto db = sketchDb[c];
+
+            if (std::isnan (db))
+            {
+                drawing = false;
+                continue;
+            }
+
+            const juce::Point<float> p ((float) c, geometry.yForDb (db));
+
+            if (drawing) path.lineTo (p);
+            else         path.startNewSubPath (p);
+
+            drawing = true;
+        }
+
+        g.setColour (colours::accent);
+        g.strokePath (path, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
     float EqGraph::snapFrequency (float hz) const
