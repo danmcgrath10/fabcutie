@@ -10,6 +10,23 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
 {
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
     bypass       = state.getRawParameterValue (fabcutie::params::id::bypass);
+
+    for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
+        bandParams[(size_t) b].attach (state, b);
+}
+
+void FabCutieAudioProcessor::pushBandSettings() noexcept
+{
+    // Bypass switches every band off, so the EQ fades out (and back in)
+    // without clicks instead of jumping.
+    const auto bypassed = bypass->load() >= 0.5f;
+
+    for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
+    {
+        auto settings = bandParams[(size_t) b].read();
+        settings.enabled = settings.enabled && ! bypassed;
+        eq.setBand (b, settings);
+    }
 }
 
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -17,6 +34,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     const juce::dsp::ProcessSpec spec { sampleRate,
                                         static_cast<juce::uint32> (samplesPerBlock),
                                         static_cast<juce::uint32> (getTotalNumOutputChannels()) };
+
+    pushBandSettings();
+    eq.prepare (sampleRate);
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.prepare (spec);
@@ -39,7 +59,8 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
-    // EQ band processing goes here, before the output stage.
+    pushBandSettings();
+    eq.process (buffer);
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.process (buffer);
