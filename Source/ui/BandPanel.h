@@ -23,6 +23,9 @@ namespace fabcutie::ui
         // Where the soloed band is kept (shared with the audio thread).
         void setSoloTarget (std::atomic<int>* target) noexcept { soloTarget = target; }
 
+        // Relabels the placement choices for a surround bus.
+        void setSurround (bool surround);
+
         static constexpr int preferredWidth  = 420;
         static constexpr int preferredHeight = 222;
 

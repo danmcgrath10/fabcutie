@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "ChannelLayout.h"
 #include "EqBand.h"
 
 namespace fabcutie::dsp
@@ -10,6 +11,12 @@ namespace fabcutie::dsp
     // side of it, or the mid or side signal; the buffer is converted between
     // left/right and mid/side only when consecutive bands need it. Dynamic
     // bands set to an external source listen to the sidechain buffer.
+    //
+    // In surround (more than two channels) there is no mid/side matrix:
+    // placements pick speakers by where they sit. Stereo is every channel,
+    // Left and Right the speakers on that side, Mid the centre line (centre,
+    // LFE, centre surround and the top/bottom centres) and Side every speaker
+    // off the centre line.
     class EqEngine
     {
     public:
@@ -17,6 +24,24 @@ namespace fabcutie::dsp
         {
             for (auto& band : bands)
                 band.prepare (sampleRate);
+        }
+
+        // Message thread, before prepare(): the speaker roles of the main bus.
+        void setChannelMap (const ChannelMap& map) noexcept { channelMap = map; }
+
+        // Whether a speaker on the given side takes part in a placement, in surround.
+        static bool surroundUses (Placement placement, ChannelSide side) noexcept
+        {
+            switch (placement)
+            {
+                case Placement::stereo: return true;
+                case Placement::left:   return side == ChannelSide::left;
+                case Placement::right:  return side == ChannelSide::right;
+                case Placement::mid:    return side == ChannelSide::centre;
+                case Placement::side:   return side != ChannelSide::centre;
+            }
+
+            return false;
         }
 
         void setBand (int index, const BandSettings& settings) noexcept
@@ -54,8 +79,8 @@ namespace fabcutie::dsp
                 if (! band.isActive())
                     continue;
 
-                float* channels[2] {};
-                int slots[2] {};
+                float* channels[EqBand::maxChannels] {};
+                int slots[EqBand::maxChannels] {};
                 int count = 0;
 
                 auto use = [&] (int channel)
@@ -65,7 +90,17 @@ namespace fabcutie::dsp
                     ++count;
                 };
 
-                if (numChannels == 1)
+                if (numChannels > 2)
+                {
+                    for (int c = 0; c < numChannels; ++c)
+                    {
+                        const auto side = c < channelMap.numChannels ? channelMap.sides[(size_t) c] : ChannelSide::centre;
+
+                        if (surroundUses (placement, side))
+                            use (c);
+                    }
+                }
+                else if (numChannels == 1)
                 {
                     // A mono signal is all mid and no side.
                     if (placement != Placement::side)
@@ -126,5 +161,6 @@ namespace fabcutie::dsp
         }
 
         std::array<EqBand, maxBands> bands;
+        ChannelMap channelMap;
     };
 }

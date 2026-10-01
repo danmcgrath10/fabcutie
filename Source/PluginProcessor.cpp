@@ -15,6 +15,71 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
 
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
         bandParams[(size_t) b].attach (state, b);
+
+    instanceNumber = registry->add (*this);
+}
+
+FabCutieAudioProcessor::~FabCutieAudioProcessor()
+{
+    // First, so editors showing this instance let go of it while it is whole.
+    registry->remove (*this);
+}
+
+namespace
+{
+    // Saved in the state tree next to the parameters.
+    const juce::Identifier instanceNameId { "instanceName" };
+}
+
+juce::String FabCutieAudioProcessor::getCustomInstanceName() const
+{
+    return state.state.getProperty (instanceNameId).toString();
+}
+
+void FabCutieAudioProcessor::setCustomInstanceName (const juce::String& name)
+{
+    const auto trimmed = name.trim().substring (0, 64);
+
+    if (trimmed.isEmpty())
+        state.state.removeProperty (instanceNameId, nullptr);
+    else
+        state.state.setProperty (instanceNameId, trimmed, nullptr);
+
+    registry->notifyChanged();
+}
+
+juce::String FabCutieAudioProcessor::getInstanceName() const
+{
+    if (const auto custom = getCustomInstanceName(); custom.isNotEmpty())
+        return custom;
+
+    {
+        const juce::SpinLock::ScopedLockType sl (trackNameLock);
+        if (trackName.isNotEmpty())
+            return trackName;
+    }
+
+    return "FabCutie " + juce::String (instanceNumber);
+}
+
+void FabCutieAudioProcessor::updateTrackProperties (const TrackProperties& properties)
+{
+    {
+        const juce::SpinLock::ScopedLockType sl (trackNameLock);
+        trackName = properties.name.value_or (juce::String()).trim();
+    }
+
+    registry->notifyChanged();
+}
+
+std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> FabCutieAudioProcessor::readBands() const noexcept
+{
+    std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> bands;
+
+    for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
+        bands[(size_t) b] = bandParams[(size_t) b].read();
+
+    return bands;
 }
 
 void FabCutieAudioProcessor::pushBandSettings() noexcept
@@ -56,6 +121,10 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
                                         static_cast<juce::uint32> (samplesPerBlock),
                                         static_cast<juce::uint32> (getTotalNumOutputChannels()) };
 
+    channelMap = fabcutie::dsp::ChannelMap::fromLayout (getChannelLayoutOfBus (false, 0));
+    editorLink.mainChannels.store (channelMap.numChannels);
+    eq.setChannelMap (channelMap);
+
     pushBandSettings();
     eq.prepare (sampleRate);
 
@@ -73,7 +142,9 @@ bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
 {
     const auto& out = layouts.getMainOutputChannelSet();
 
-    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
+    // Mono, stereo, or a surround layout up to 9.1.6, the same in and out.
+    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo()
+        && ! fabcutie::dsp::isSupportedSurroundLayout (out))
         return false;
 
     if (out != layouts.getMainInputChannelSet())
@@ -111,7 +182,7 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     const auto sidechain = hasSidechain ? getBusBuffer (buffer, true, 1) : juce::AudioBuffer<float>();
     editorLink.sidechainConnected.store (hasSidechain, std::memory_order_relaxed);
 
-    const auto analyze = editorLink.analyzerActive.load (std::memory_order_relaxed);
+    const auto analyze = editorLink.analyzerUsers.load (std::memory_order_relaxed) > 0;
 
     if (analyze)
     {
@@ -157,7 +228,10 @@ void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBy
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (state.state.getType()))
+        {
             state.replaceState (juce::ValueTree::fromXml (*xml));
+            registry->notifyChanged(); // the saved name may differ
+        }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

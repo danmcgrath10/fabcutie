@@ -66,6 +66,16 @@ namespace fabcutie::ui
         startTimerHz (15);
     }
 
+    void BandPanel::setSurround (bool surround)
+    {
+        const auto names = EqModel::placementNames (surround);
+
+        for (int i = 0; i < names.size(); ++i)
+            placementBox.changeItemText (i + 1, names[i]);
+
+        placementBox.setTooltip (surround ? "Which speakers the band works on" : "Which channels the band works on");
+    }
+
     BandPanel::~BandPanel()
     {
         // Attachments must go before the controls they are attached to.

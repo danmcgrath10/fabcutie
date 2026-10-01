@@ -31,6 +31,7 @@ jobs:
           cd build/FabCutie_artefacts/Release
           codesign --force --deep --sign - AU/FabCutie.component
           codesign --force --deep --sign - VST3/FabCutie.vst3
+          codesign --force --deep --sign - CLAP/FabCutie.clap
           codesign --force --deep --sign - Standalone/FabCutie.app
 
       - name: Validate AU with auval
@@ -46,6 +47,7 @@ jobs:
           cd build/FabCutie_artefacts/Release
           ditto -c -k --keepParent AU/FabCutie.component "$GITHUB_WORKSPACE/FabCutie-macOS-AU.zip"
           ditto -c -k --keepParent VST3/FabCutie.vst3 "$GITHUB_WORKSPACE/FabCutie-macOS-VST3.zip"
+          ditto -c -k --keepParent CLAP/FabCutie.clap "$GITHUB_WORKSPACE/FabCutie-macOS-CLAP.zip"
           ditto -c -k --keepParent Standalone/FabCutie.app "$GITHUB_WORKSPACE/FabCutie-macOS-Standalone.zip"
 
       - uses: actions/upload-artifact@v4
@@ -73,4 +75,5 @@ jobs:
           name: FabCutie-Windows
           path: |
             build/FabCutie_artefacts/Release/VST3/
+            build/FabCutie_artefacts/Release/CLAP/
             build/FabCutie_artefacts/Release/Standalone/

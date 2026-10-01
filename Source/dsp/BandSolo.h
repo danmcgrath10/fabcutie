@@ -30,10 +30,13 @@ namespace fabcutie::dsp
             numChannels = std::min (numChannels, EqBand::maxChannels);
 
             float* channels[EqBand::maxChannels] {};
-            const int slots[EqBand::maxChannels] { 0, 1 };
+            int slots[EqBand::maxChannels] {};
 
             for (int c = 0; c < numChannels; ++c)
+            {
                 channels[c] = buffer.getWritePointer (c);
+                slots[c] = c;
+            }
 
             filter.process (channels, slots, numChannels, buffer.getNumSamples());
         }

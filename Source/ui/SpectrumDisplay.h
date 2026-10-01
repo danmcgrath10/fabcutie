@@ -31,6 +31,9 @@ namespace fabcutie::ui
         void resized() override;
 
     private:
+        void setActive (bool);
+        bool active = false;
+
         struct Trace
         {
             Trace (dsp::AudioTap& t, juce::Colour c) : tap (t), colour (c) {}

@@ -109,7 +109,8 @@ namespace fabcutie::ui
         }
 
         // Bars, coloured by level: green, then yellow from -12 dB, red above 0.
-        const auto gap = 2.0f;
+        // Surround layouts get one thin bar per speaker.
+        const auto gap = numChannels > 4 ? 0.5f : 2.0f;
         const auto barWidth = (bars.getWidth() - gap * (float) (numChannels - 1)) / (float) numChannels;
 
         const auto yFor = [&] (float db) { return bars.getBottom() - bars.getHeight() * proportionForDb (db); };

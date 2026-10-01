@@ -15,7 +15,10 @@ Audio-thread code lives here, independent of the UI.
 - `BandDynamics.h`: a dynamic band's detector (sidechain filter, peak level with release,
   linked across channels) and gain computer (threshold, range, soft knee, attack).
 - `EqEngine.h`: 24 bands in series with per-band stereo/left/right/mid/side routing, and the
-  external sidechain buffer for dynamic bands that listen to it.
+  external sidechain buffer for dynamic bands that listen to it. In surround the placements pick
+  speakers by side (all / left / right / centre line / off-centre) instead of matrixing M/S.
+- `ChannelLayout.h`: speaker sides of the main bus and the surround layouts offered (up to 9.1.6,
+  16 channels; no discrete or ambisonic sets).
 - `Character.h`: global Clean/Gentle/Warm saturation after the bands, run at 4x oversampling
   so its harmonics don't alias. Unity gain for quiet signals; Clean is a bit-exact bypass.
 - `OutputStage.h`: smoothed output gain and bypass.
@@ -23,5 +26,6 @@ Audio-thread code lives here, independent of the UI.
 - `SpectrumAnalyzer.h`: FFT, windowing and smoothing for the analyzer (runs on the message thread).
 - `PeakMeter.h`: per-channel peak capture for the output meter.
 - `BandSolo.h`: intelligent solo, auditions the region a band works on.
-- `EditorLink.h`: the taps, meter, sidechain flag and solo band shared with the editor.
+- `EditorLink.h`: the taps, meter, sidechain flag, main channel count and solo band shared with
+  the editor. The taps fill while any editor (its own, or another instance's) shows the analyzer.
 - Planned: linear-phase mode.

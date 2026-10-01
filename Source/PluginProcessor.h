@@ -2,8 +2,10 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "InstanceRegistry.h"
 #include "Parameters.h"
 #include "dsp/BandSolo.h"
+#include "dsp/ChannelLayout.h"
 #include "dsp/EditorLink.h"
 #include "dsp/Character.h"
 #include "dsp/EqEngine.h"
@@ -14,7 +16,7 @@ class FabCutieAudioProcessor final : public juce::AudioProcessor
 {
 public:
     FabCutieAudioProcessor();
-    ~FabCutieAudioProcessor() override = default;
+    ~FabCutieAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -39,6 +41,8 @@ public:
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
+    void updateTrackProperties (const TrackProperties&) override;
+
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
@@ -48,8 +52,28 @@ public:
     // How far each dynamic band is currently moving its gain, for the editor.
     const fabcutie::ui::EqModel::DynamicGains& getDynamicGains() const noexcept { return dynamicGains; }
 
+    // Instance list. The number is fixed for the instance's lifetime; the
+    // name is the user's own (saved with the session), else the host's track
+    // name, else "FabCutie <number>".
+    int getInstanceNumber() const noexcept { return instanceNumber; }
+    juce::String getInstanceName() const;
+    juce::String getCustomInstanceName() const;
+    void setCustomInstanceName (const juce::String&); // message thread; empty to clear
+
+    // The current band values, readable from any thread (for overlays).
+    std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> readBands() const noexcept;
+
+    // The main bus speaker roles playback was prepared with.
+    const fabcutie::dsp::ChannelMap& getChannelMap() const noexcept { return channelMap; }
+
 private:
     juce::AudioProcessorValueTreeState state;
+
+    juce::SharedResourcePointer<fabcutie::InstanceRegistry> registry;
+    int instanceNumber = 0;
+    juce::String trackName;
+    juce::SpinLock trackNameLock;
+    fabcutie::dsp::ChannelMap channelMap;
 
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* bypass = nullptr;
