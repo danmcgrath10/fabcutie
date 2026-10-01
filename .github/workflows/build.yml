@@ -1,0 +1,70 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (AU, VST3, Standalone)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release -j "$(sysctl -n hw.ncpu)"
+
+      - name: Sign (ad-hoc)
+        run: |
+          cd build/FabCutie_artefacts/Release
+          codesign --force --deep --sign - AU/FabCutie.component
+          codesign --force --deep --sign - VST3/FabCutie.vst3
+          codesign --force --deep --sign - Standalone/FabCutie.app
+
+      - name: Validate AU with auval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/FabCutie_artefacts/Release/AU/FabCutie.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -a | grep -i fabcutie || true
+          auval -strict -v aufx Fceq Fbct
+
+      - name: Package
+        run: |
+          cd build/FabCutie_artefacts/Release
+          ditto -c -k --keepParent AU/FabCutie.component "$GITHUB_WORKSPACE/FabCutie-macOS-AU.zip"
+          ditto -c -k --keepParent VST3/FabCutie.vst3 "$GITHUB_WORKSPACE/FabCutie-macOS-VST3.zip"
+          ditto -c -k --keepParent Standalone/FabCutie.app "$GITHUB_WORKSPACE/FabCutie-macOS-Standalone.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FabCutie-macOS
+          path: FabCutie-macOS-*.zip
+
+  windows:
+    name: Windows (VST3, Standalone)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FabCutie-Windows
+          path: |
+            build/FabCutie_artefacts/Release/VST3/
+            build/FabCutie_artefacts/Release/Standalone/
