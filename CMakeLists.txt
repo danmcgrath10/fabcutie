@@ -86,10 +86,10 @@ target_link_libraries(FabCutie
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
-# Offline DSP tests (run with ctest). They only need juce_audio_basics, so they
-# build without the plugin formats.
+# Offline DSP tests (run with ctest). They only need juce_audio_basics (and
+# juce_dsp for the character stage), so they build without the plugin formats.
 # ---------------------------------------------------------------------------
-option(FABCUTIE_BUILD_TESTS "Build the EQ engine tests" ON)
+option(FABCUTIE_BUILD_TESTS "Build the DSP tests" ON)
 
 if(FABCUTIE_BUILD_TESTS)
     enable_testing()
@@ -107,4 +107,30 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME EqEngineTests COMMAND FabCutieTests)
+
+    juce_add_console_app(FabCutieCharacterTests PRODUCT_NAME "FabCutieCharacterTests")
+    target_sources(FabCutieCharacterTests PRIVATE Tests/CharacterTests.cpp)
+    target_include_directories(FabCutieCharacterTests PRIVATE Source)
+    target_compile_definitions(FabCutieCharacterTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieCharacterTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME CharacterTests COMMAND FabCutieCharacterTests)
+
+    juce_add_console_app(FabCutieDynamicTests PRODUCT_NAME "FabCutieDynamicTests")
+    target_sources(FabCutieDynamicTests PRIVATE Tests/DynamicEqTests.cpp)
+    target_include_directories(FabCutieDynamicTests PRIVATE Source)
+    target_compile_definitions(FabCutieDynamicTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieDynamicTests
+        PRIVATE
+            juce::juce_audio_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
 endif()

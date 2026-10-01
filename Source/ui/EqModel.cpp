@@ -15,6 +15,19 @@ namespace fabcutie::ui
                 writes[(size_t) b][(size_t) p] = param;
             }
         }
+
+        pianoRoll = state.getRawParameterValue (params::id::pianoRoll);
+        jassert (pianoRoll != nullptr);
+    }
+
+    void EqModel::setPianoRoll (bool on)
+    {
+        if (auto* param = state.getParameter (params::id::pianoRoll))
+        {
+            param->beginChangeGesture();
+            param->setValueNotifyingHost (on ? 1.0f : 0.0f);
+            param->endChangeGesture();
+        }
     }
 
     std::array<dsp::BandSettings, dsp::maxBands> EqModel::getAllBands() const noexcept

@@ -55,6 +55,159 @@ namespace fabcutie::dsp
         return 1.0 / (2.0 * std::cos ((section + 1.0) * pi / order));
     }
 
+    // A section with any second-order numerator over the SVF denominator,
+    // H(s) = (b2 s^2 + b1 s + b0) / (s^2 + k s + 1), rewritten in the
+    // m0 + (m1 s + m2) / (...) form the processor runs.
+    inline SvfSection svfFromBiquad (double g, double k, double b2, double b1, double b0) noexcept
+    {
+        return { g, k, b2, b1 - b2 * k, b0 - b2 };
+    }
+
+    // Brickwall cut: an order-16 inverse Chebyshev (Chebyshev type II) filter.
+    // Its pass band is monotonic like a Butterworth's, and pairs of zeros on
+    // the j axis just past the cutoff give a much faster drop, with a
+    // 100 dB stop band. The prototype is scaled so the cutoff is its -3 dB
+    // point, matching the other slopes.
+    inline void designBrickwall (BandDesign& d, double g, bool highpass) noexcept
+    {
+        const auto pi = 3.14159265358979323846;
+        constexpr int order = maxFilterOrder;
+        constexpr double stopBandDb = 100.0;
+
+        const auto invEps = std::sqrt (std::pow (10.0, stopBandDb / 10.0) - 1.0); // 1 / epsilon
+        const auto mu = std::asinh (invEps) / order;
+        const auto w3 = 1.0 / std::cosh (std::acosh (invEps) / order); // -3 dB point of the raw prototype
+
+        for (int i = 0; i < order / 2; ++i)
+        {
+            const auto theta = (2.0 * i + 1.0) * pi / (2.0 * order);
+
+            // Inverse of the matching Chebyshev type I pole, rescaled to w3 = 1.
+            const std::complex<double> chebyPole { -std::sinh (mu) * std::sin (theta), std::cosh (mu) * std::cos (theta) };
+            const auto pole = 1.0 / (chebyPole * w3);
+            const auto zero = 1.0 / (std::cos (theta) * w3);
+
+            const auto radius = std::abs (pole);
+            const auto k = -2.0 * pole.real() / radius;
+            const auto r = zero / radius; // zero frequency relative to the section's
+
+            // Lowpass section with unity gain at DC; the highpass is its
+            // s -> 1/s mirror with unity gain at the top.
+            if (highpass)
+                d.sections[(size_t) d.numSections++] = svfFromBiquad (g / radius, k, 1.0, 0.0, 1.0 / (r * r));
+            else
+                d.sections[(size_t) d.numSections++] = svfFromBiquad (g * radius, k, 1.0 / (r * r), 0.0, 1.0);
+        }
+    }
+
+    inline std::complex<double> designResponse (const BandDesign&, double frequency, double sampleRate) noexcept;
+
+    // Flat tilt: a constant dB-per-octave slope through the band frequency.
+    // The gain is the level difference it makes across 20 Hz to 20 kHz.
+    // A straight line in dB needs a "half-order" filter, so it is built the
+    // classic way: 16 first-order pole/zero pairs spaced evenly in log
+    // frequency, each making a small step, two pairs per section.
+    //
+    // The pairs are spaced in the bilinear-warped frequency the filters
+    // really run at, from 4 Hz to past Nyquist. Near Nyquist that warp
+    // stretches the octaves, and each pair's step blurs into its neighbours,
+    // so the step sizes are refined a few times against the target line.
+    // Finally the result is scaled to 0 dB at the band frequency.
+    inline constexpr double flatTiltOctaves = 9.965784284662087; // log2 (20000 / 20)
+
+    inline void designFlatTilt (BandDesign& d, double gainDb, double frequency, double sampleRate) noexcept
+    {
+        const auto pi = 3.14159265358979323846;
+        constexpr int pairs = 2 * BandDesign::maxSections;
+        constexpr int refinements = 3;
+
+        const auto warp   = [&] (double hz) { return std::tan (pi * hz / sampleRate); };
+        const auto unwarp = [&] (double w)  { return std::atan (w) * sampleRate / pi; };
+
+        const auto lowW  = warp (4.0);
+        const auto highW = 4.0 * warp (std::min (24000.0, 0.45 * sampleRate));
+        const auto topHz = 0.45 * sampleRate; // the line is matched up to here
+        const auto spacing = std::log2 (highW / lowW) / pairs; // warped octaves per pair
+        const auto slope = gainDb / flatTiltOctaves;            // dB per octave (in Hz)
+
+        std::array<double, pairs> centre {}, step {};
+
+        for (int i = 0; i < pairs; ++i)
+        {
+            centre[(size_t) i] = lowW * std::exp2 (spacing * (i + 0.5));
+
+            // First guess: the line's slope per warped octave, which is the slope
+            // in Hz divided by d log2(warped) / d log2(Hz) = x / (sin x cos x).
+            const auto x = std::atan (centre[(size_t) i]);
+            step[(size_t) i] = slope * spacing * std::sin (x) * std::cos (x) / x;
+        }
+
+        const auto build = [&]
+        {
+            d.numSections = 0;
+
+            for (int i = 0; i < pairs; i += 2)
+            {
+                double poles[2], zeros[2];
+
+                for (int j = 0; j < 2; ++j)
+                {
+                    // A pole and zero split octaves apart make a 6.02 * split dB step;
+                    // the zero comes first for a rise.
+                    const auto split = std::abs (step[(size_t) (i + j)]) / 6.0206;
+                    const auto below = centre[(size_t) (i + j)] * std::exp2 (-0.5 * split);
+                    const auto above = centre[(size_t) (i + j)] * std::exp2 (0.5 * split);
+
+                    zeros[j] = step[(size_t) (i + j)] >= 0.0 ? below : above;
+                    poles[j] = step[(size_t) (i + j)] >= 0.0 ? above : below;
+                }
+
+                // (s/z1 + 1)(s/z2 + 1) / ((s/p1 + 1)(s/p2 + 1)), normalised to
+                // the poles' geometric mean so the denominator is s^2 + k s + 1.
+                const auto g = std::sqrt (poles[0] * poles[1]);
+                const auto a = poles[0] / g;
+                const auto c1 = g / zeros[0], c2 = g / zeros[1];
+
+                d.sections[(size_t) d.numSections++] = svfFromBiquad (g, a + 1.0 / a, c1 * c2, c1 + c2, 1.0);
+            }
+        };
+
+        for (int pass = 0; pass < refinements; ++pass)
+        {
+            build();
+
+            // Error against the line at the cell edges; each step absorbs the
+            // change in error across its own cell. Above the matched range the
+            // error is held, so those steps are left alone.
+            std::array<double, pairs + 1> error {};
+
+            for (int n = 0; n <= pairs; ++n)
+            {
+                const auto hz = unwarp (lowW * std::exp2 (spacing * n));
+
+                if (hz > topHz)
+                {
+                    error[(size_t) n] = error[(size_t) n - 1];
+                    continue;
+                }
+
+                const auto db = 20.0 * std::log10 (std::abs (designResponse (d, hz, sampleRate)));
+                error[(size_t) n] = db - slope * std::log2 (hz);
+            }
+
+            for (int i = 0; i < pairs; ++i)
+                step[(size_t) i] -= error[(size_t) i + 1] - error[(size_t) i];
+        }
+
+        build();
+
+        const auto pivot = std::abs (designResponse (d, frequency, sampleRate));
+        auto& first = d.sections[0];
+        first.m0 /= pivot;
+        first.m1 /= pivot;
+        first.m2 /= pivot;
+    }
+
     inline BandDesign designBand (const BandSettings& s, double sampleRate) noexcept
     {
         const auto pi = 3.14159265358979323846;
@@ -119,10 +272,30 @@ namespace fabcutie::dsp
                 break;
             }
 
+            case FilterType::allPass:
+            {
+                // (s^2 - k s + 1) / (s^2 + k s + 1): unity magnitude, with the
+                // phase turning through 360 degrees, fastest at high Q.
+                const auto k = 1.0 / q;
+                addSection (g, k, 1.0, -2.0 * k, 0.0);
+                break;
+            }
+
+            case FilterType::flatTilt:
+                designFlatTilt (d, s.gainDb, freq, sampleRate);
+                break;
+
             case FilterType::lowCut:
             case FilterType::highCut:
             {
                 const auto highpass = s.type == FilterType::lowCut;
+
+                if (isBrickwall (s.slopeIndex))
+                {
+                    designBrickwall (d, g, highpass);
+                    break;
+                }
+
                 const auto order = filterOrderForSlope (s.slopeIndex);
                 const auto pairs = order / 2;
 

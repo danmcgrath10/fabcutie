@@ -46,6 +46,13 @@ namespace fabcutie::params
                 case BandParam::q:         return "q";
                 case BandParam::slope:     return "slope";
                 case BandParam::placement: return "place";
+                case BandParam::dynamic:        return "dyn";
+                case BandParam::threshold:      return "thresh";
+                case BandParam::range:          return "range";
+                case BandParam::attack:         return "attack";
+                case BandParam::release:        return "release";
+                case BandParam::detectorSource: return "scsrc";
+                case BandParam::detectorFilter: return "scfilt";
             }
 
             return "";
@@ -59,7 +66,7 @@ namespace fabcutie::params
 
     juce::StringArray filterTypeNames()
     {
-        return { "Bell", "Low Shelf", "Low Cut", "High Shelf", "High Cut", "Notch", "Band Pass", "Tilt Shelf" };
+        return { "Bell", "Low Shelf", "Low Cut", "High Shelf", "High Cut", "Notch", "Band Pass", "Tilt Shelf", "All Pass", "Flat Tilt" };
     }
 
     juce::StringArray slopeNames()
@@ -67,12 +74,29 @@ namespace fabcutie::params
         juce::StringArray names;
         for (auto slope : dsp::cutSlopesDbPerOct)
             names.add (juce::String (slope) + " dB/oct");
+        names.add ("Brickwall");
+        jassert (names.size() == dsp::numSlopes);
         return names;
     }
 
     juce::StringArray placementNames()
     {
         return { "Stereo", "Left", "Right", "Mid", "Side" };
+    }
+
+    juce::StringArray characterNames()
+    {
+        return { "Clean", "Gentle", "Warm" };
+    }
+
+    juce::StringArray detectorSourceNames()
+    {
+        return { "Internal", "External" };
+    }
+
+    juce::StringArray detectorFilterNames()
+    {
+        return { "Band", "Wide" };
     }
 
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
@@ -95,6 +119,18 @@ namespace fabcutie::params
             "Bypass",
             false));
 
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::character, characterVersion },
+            "Character",
+            characterNames(),
+            (int) dsp::CharacterMode::clean));
+
+        layout.add (std::make_unique<juce::AudioParameterBool> (
+            juce::ParameterID { id::pianoRoll, pianoRollVersion },
+            "Piano Roll",
+            false,
+            juce::AudioParameterBoolAttributes().withAutomatable (false)));
+
         const auto frequencyAttributes = juce::AudioParameterFloatAttributes()
                                              .withLabel ("Hz")
                                              .withStringFromValueFunction (frequencyToString)
@@ -102,6 +138,14 @@ namespace fabcutie::params
 
         const auto qAttributes = juce::AudioParameterFloatAttributes()
                                      .withStringFromValueFunction ([] (float v, int) { return juce::String (v, v < 10.0f ? 2 : 1); });
+
+        const auto msAttributes = juce::AudioParameterFloatAttributes()
+                                      .withLabel ("ms")
+                                      .withStringFromValueFunction ([] (float v, int)
+                                      {
+                                          if (v >= 1000.0f) return juce::String (v / 1000.0f, 2) + " s";
+                                          return juce::String (v, v < 10.0f ? 1 : 0) + " ms";
+                                      });
 
         const dsp::BandSettings defaults;
 
@@ -143,6 +187,40 @@ namespace fabcutie::params
                 juce::ParameterID { bandParamId (b, BandParam::placement), bandsVersion },
                 name + "Placement", placementNames(), (int) defaults.placement));
 
+            const auto& dyn = defaults.dynamics;
+
+            group->addChild (std::make_unique<juce::AudioParameterBool> (
+                juce::ParameterID { bandParamId (b, BandParam::dynamic), dynamicsVersion },
+                name + "Dynamic", dyn.enabled));
+
+            group->addChild (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { bandParamId (b, BandParam::threshold), dynamicsVersion },
+                name + "Threshold",
+                juce::NormalisableRange<float> (range::thresholdMinDb, range::thresholdMaxDb, 0.01f),
+                dyn.thresholdDb, dbAttributes));
+
+            group->addChild (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { bandParamId (b, BandParam::range), dynamicsVersion },
+                name + "Range",
+                juce::NormalisableRange<float> (-range::dynamicRangeMaxDb, range::dynamicRangeMaxDb, 0.01f),
+                dyn.rangeDb, dbAttributes));
+
+            group->addChild (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { bandParamId (b, BandParam::attack), dynamicsVersion },
+                name + "Attack", logRange (range::attackMinMs, range::attackMaxMs), dyn.attackMs, msAttributes));
+
+            group->addChild (std::make_unique<juce::AudioParameterFloat> (
+                juce::ParameterID { bandParamId (b, BandParam::release), dynamicsVersion },
+                name + "Release", logRange (range::releaseMinMs, range::releaseMaxMs), dyn.releaseMs, msAttributes));
+
+            group->addChild (std::make_unique<juce::AudioParameterChoice> (
+                juce::ParameterID { bandParamId (b, BandParam::detectorSource), dynamicsVersion },
+                name + "Sidechain Source", detectorSourceNames(), (int) dyn.source));
+
+            group->addChild (std::make_unique<juce::AudioParameterChoice> (
+                juce::ParameterID { bandParamId (b, BandParam::detectorFilter), dynamicsVersion },
+                name + "Sidechain Filter", detectorFilterNames(), (int) dyn.filter));
+
             layout.add (std::move (group));
         }
 
@@ -165,6 +243,13 @@ namespace fabcutie::params
         q         = get (BandParam::q);
         slope     = get (BandParam::slope);
         placement = get (BandParam::placement);
+        dynamic   = get (BandParam::dynamic);
+        threshold = get (BandParam::threshold);
+        dynamicRange = get (BandParam::range);
+        attack    = get (BandParam::attack);
+        release   = get (BandParam::release);
+        detectorSource = get (BandParam::detectorSource);
+        detectorFilter = get (BandParam::detectorFilter);
     }
 
     dsp::BandSettings BandParameterRefs::read() const noexcept
@@ -175,8 +260,17 @@ namespace fabcutie::params
         s.frequency  = frequency->load();
         s.gainDb     = gain->load();
         s.q          = q->load();
-        s.slopeIndex = juce::roundToInt (slope->load());
+        s.slopeIndex = juce::jlimit (0, dsp::numSlopes - 1, juce::roundToInt (slope->load()));
         s.placement  = (dsp::Placement) juce::jlimit (0, dsp::numPlacements - 1, juce::roundToInt (placement->load()));
+
+        auto& d = s.dynamics;
+        d.enabled     = dynamic->load() >= 0.5f;
+        d.thresholdDb = threshold->load();
+        d.rangeDb     = dynamicRange->load();
+        d.attackMs    = attack->load();
+        d.releaseMs   = release->load();
+        d.source      = (dsp::DetectorSource) juce::jlimit (0, dsp::numDetectorSources - 1, juce::roundToInt (detectorSource->load()));
+        d.filter      = (dsp::DetectorFilter) juce::jlimit (0, dsp::numDetectorFilters - 1, juce::roundToInt (detectorFilter->load()));
         return s;
     }
 }

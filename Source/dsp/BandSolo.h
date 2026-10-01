@@ -66,10 +66,16 @@ namespace fabcutie::dsp
                 case FilterType::notch:
                 case FilterType::bandPass:
                 case FilterType::tiltShelf:
+                case FilterType::allPass:
                     // Very wide bells would solo almost everything, very narrow
                     // ones almost nothing, so keep the width audible.
                     s.type = FilterType::bandPass;
                     s.q = std::clamp (band.q, 0.5f, 12.0f);
+                    break;
+
+                case FilterType::flatTilt:
+                    // A flat tilt works on the whole spectrum, so solo passes
+                    // everything (the default band is a 0 dB bell).
                     break;
             }
 

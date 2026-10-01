@@ -24,6 +24,9 @@ namespace fabcutie::ui
     //   Alt/Option-click a node    solo the band while the mouse is held
     //   click a spectrum peak      add a bell there and drag it (spectrum grab)
     //
+    // With the piano roll on (graph menu), a keyboard runs along the bottom
+    // and dragged or added bands snap to the nearest note.
+    //
     // Painting is layered: paint() draws the background and grid, child
     // components (setBackgroundLayer, e.g. the spectrum analyzer) draw above
     // that, and paintOverChildren() draws the curves and nodes.
@@ -128,6 +131,8 @@ namespace fabcutie::ui
         void drawReadout (juce::Graphics&, int band);
         void drawRangeButton (juce::Graphics&);
         void drawSoloBanner (juce::Graphics&);
+        void drawPianoRoll (juce::Graphics&);
+        float snapFrequency (float hz) const;
 
         EqModel& model;
         std::function<double()> sampleRateSource;
@@ -148,6 +153,7 @@ namespace fabcutie::ui
         std::array<dsp::BandSettings, dsp::maxBands> bands {};
         double curveSampleRate = 0.0;
         bool curvesValid = false;
+        bool pianoRollShown = false;
 
         std::vector<float> pointX, pointHz;
         std::array<std::vector<float>, dsp::maxBands> bandDb;

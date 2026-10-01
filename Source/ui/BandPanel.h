@@ -7,7 +7,9 @@
 namespace fabcutie::ui
 {
     // Compact controls for one band that float over the graph next to the
-    // selected node: type, slope, placement, and frequency / gain / Q knobs.
+    // selected node: type, slope, placement, and frequency / gain / Q knobs,
+    // with the band's dynamics (threshold, range, attack, release and the
+    // sidechain settings) on a second row.
     class BandPanel final : public juce::Component,
                             private juce::Timer
     {
@@ -22,7 +24,7 @@ namespace fabcutie::ui
         void setSoloTarget (std::atomic<int>* target) noexcept { soloTarget = target; }
 
         static constexpr int preferredWidth  = 420;
-        static constexpr int preferredHeight = 128;
+        static constexpr int preferredHeight = 222;
 
         void paint (juce::Graphics&) override;
         void resized() override;
@@ -30,6 +32,7 @@ namespace fabcutie::ui
     private:
         using SliderAttachment   = juce::AudioProcessorValueTreeState::SliderAttachment;
         using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+        using ButtonAttachment   = juce::AudioProcessorValueTreeState::ButtonAttachment;
         using BandParam = params::BandParam;
 
         struct Knob
@@ -51,6 +54,15 @@ namespace fabcutie::ui
         Knob frequency, gain, q;
         juce::TextButton removeButton, soloButton;
         std::atomic<int>* soloTarget = nullptr;
+
+        juce::TextButton dynamicButton { "DYN" };
+        std::unique_ptr<ButtonAttachment> dynamicAttachment;
+        juce::ComboBox sourceBox, detectorFilterBox;
+        std::unique_ptr<ComboBoxAttachment> sourceAttachment, detectorFilterAttachment;
+        Knob threshold, range, attack, release;
+        float shownDynamicGainDb = 0.0f;
+
+        std::array<Knob*, 7> allKnobs() noexcept { return { &frequency, &gain, &q, &threshold, &range, &attack, &release }; }
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandPanel)
     };

@@ -13,6 +13,8 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Per-band placement: Stereo, Left, Right, Mid or Side.
 - Frequency 10 Hz to 30 kHz, gain ±30 dB, Q 0.025 to 40.
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
+- Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
+- Sidechain per dynamic band: listen to the band's own input or the plugin's external sidechain input, filtered to the band's region (band pass for bells, low or high pass for shelves) or wide open.
 - Zero latency. Filters are trapezoidal state variable filters, which stay stable and quiet under fast automation.
 - Real-time spectrum analyzer behind the curves: input (Pre), output (Post) and sidechain spectra, with adjustable range, speed, tilt and resolution, and Freeze.
 - Collision detection: red shading where the output and the sidechain signal crowd the same frequencies.
@@ -36,7 +38,11 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 | Hover a spectrum peak, then click and drag | Spectrum grab: adds a bell on the peak and drags it |
 | Alt/Option-click a node and hold | Solo the band while the mouse is down |
 
-The selected band's panel floats over the graph: type, slope, placement, frequency/gain/Q knobs (double-click a knob to reset it) and a Solo button. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
+The selected band's panel floats over the graph: type, slope, placement, frequency/gain/Q knobs (double-click a knob to reset it) and a Solo button, with the dynamics controls on a second row. Bands on Left, Right, Mid or Side get their own dashed curve, labelled L, R, M or S. The window is resizable and remembers its size and display range per instance.
+
+### External sidechain in Logic Pro
+
+FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the **Side Chain** menu in the plugin window's header, then set a dynamic band's source to **External**. Bands left on **Internal** keep listening to their own input. With no sidechain selected, external bands hear silence and stay at their static gain. The same input feeds the analyzer's sidechain spectrum.
 
 ## Roadmap
 
@@ -45,8 +51,8 @@ The selected band's panel floats over the graph: type, slope, placement, frequen
 3. **Interface** (done): interactive frequency graph with draggable nodes and a floating band panel.
 4. **Analyzer** (done): pre/post/sidechain spectrum, range, speed, tilt, resolution, freeze, spectrum grab, collision detection, band solo, output meter.
 5. **Workflow:** undo/redo, A/B, presets, copy and paste of bands, value entry, auto gain, gain scale, phase invert, MIDI learn.
-6. **Filter extras:** All Pass and Flat Tilt shapes, brickwall slope, piano roll.
-7. **Dynamic EQ** with sidechain, then phase modes (linear and natural phase), character modes, EQ Sketch/Match and spectral dynamics.
+6. **Filter extras** (done): All Pass and Flat Tilt shapes, brickwall slope, piano roll.
+7. **Dynamic EQ** with sidechain (done) and character modes (done), then phase modes (linear and natural phase), EQ Sketch/Match and spectral dynamics.
 
 ## The analyzer
 

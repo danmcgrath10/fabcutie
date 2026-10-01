@@ -37,10 +37,16 @@ namespace fabcutie::ui
         void addBand (int band, dsp::FilterType type, float frequency, float gainDb);
         void removeBand (int band);
 
+        // Piano roll display: show notes on the graph and snap band
+        // frequencies to them while dragging.
+        bool isPianoRollOn() const noexcept { return pianoRoll->load() >= 0.5f; }
+        void setPianoRoll (bool on);
+
         static bool usesGain (dsp::FilterType t) noexcept
         {
             return t == dsp::FilterType::bell || t == dsp::FilterType::lowShelf
-                || t == dsp::FilterType::highShelf || t == dsp::FilterType::tiltShelf;
+                || t == dsp::FilterType::highShelf || t == dsp::FilterType::tiltShelf
+                || t == dsp::FilterType::flatTilt;
         }
 
         static bool usesSlope (dsp::FilterType t) noexcept
@@ -48,12 +54,30 @@ namespace fabcutie::ui
             return t == dsp::FilterType::lowCut || t == dsp::FilterType::highCut;
         }
 
+        // Flat tilts and brickwall cuts have no Q.
+        static bool usesQ (const dsp::BandSettings& s) noexcept
+        {
+            return s.type != dsp::FilterType::flatTilt && ! (usesSlope (s.type) && dsp::isBrickwall (s.slopeIndex));
+        }
+
+        static bool usesDynamics (dsp::FilterType t) noexcept { return dsp::supportsDynamics (t); }
+
+        // Live gain offset of each dynamic band, written by the processor.
+        using DynamicGains = std::array<std::atomic<float>, dsp::maxBands>;
+        void setDynamicGainSource (const DynamicGains* source) noexcept { dynamicGains = source; }
+        float getDynamicGainDb (int band) const noexcept
+        {
+            return dynamicGains != nullptr ? (*dynamicGains)[(size_t) band].load (std::memory_order_relaxed) : 0.0f;
+        }
+
     private:
-        static constexpr int numBandParams = 7;
+        static constexpr int numBandParams = params::numBandParams;
+        const DynamicGains* dynamicGains = nullptr;
 
         juce::AudioProcessorValueTreeState& state;
         std::array<params::BandParameterRefs, dsp::maxBands> reads;
         std::array<std::array<juce::RangedAudioParameter*, numBandParams>, dsp::maxBands> writes {};
         std::array<std::array<int, numBandParams>, dsp::maxBands> gestureDepth {};
+        std::atomic<float>* pianoRoll = nullptr;
     };
 }

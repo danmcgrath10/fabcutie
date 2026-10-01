@@ -27,6 +27,8 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
 {
     using namespace fabcutie;
 
+    model.setDynamicGainSource (&p.getDynamicGains());
+
     addAndMakeVisible (graph);
     addChildComponent (bandPanel);
     addAndMakeVisible (meter);
@@ -56,8 +58,13 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     bypassButton.setClickingTogglesState (true);
     addAndMakeVisible (bypassButton);
 
+    characterBox.addItemList (params::characterNames(), 1);
+    characterBox.setTooltip ("Character: Clean, or Gentle / Warm analog-style saturation (oversampled)");
+    addAndMakeVisible (characterBox);
+
     outputGainAttachment = std::make_unique<SliderAttachment> (state, params::id::outputGain, outputGain);
     bypassAttachment     = std::make_unique<ButtonAttachment> (state, params::id::bypass, bypassButton);
+    characterAttachment  = std::make_unique<ComboBoxAttachment> (state, params::id::character, characterBox);
 
     // After the children exist, so they all pick it up.
     setLookAndFeel (&lookAndFeel);
@@ -125,6 +132,7 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (colours::textDim);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
+    g.drawText ("CHARACTER", characterBox.getBounds().translated (-76, 0).withWidth (72), juce::Justification::centredLeft);
 }
 
 void FabCutieAudioProcessorEditor::resized()
@@ -135,6 +143,8 @@ void FabCutieAudioProcessorEditor::resized()
     bypassButton.setBounds (header.removeFromRight (72).withSizeKeepingCentre (72, 24));
     header.removeFromRight (16);
     outputGain.setBounds (header.removeFromRight (100));
+    header.removeFromRight (66); // "OUTPUT" label
+    characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
 
     analyzerBar.setBounds (area.removeFromBottom (analyzerBarHeight));
     meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));

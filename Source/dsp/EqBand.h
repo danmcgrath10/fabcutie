@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include "BandDynamics.h"
 #include "FilterDesign.h"
 
 namespace fabcutie::dsp
@@ -9,7 +10,8 @@ namespace fabcutie::dsp
     // One EQ band running on up to two channels (left/right or mid/side,
     // chosen by EqEngine). Frequency, gain and Q glide to new values;
     // changes to type, slope, placement or on/off fade the band's effect out,
-    // swap the filter and fade it back in, so nothing clicks.
+    // swap the filter and fade it back in, so nothing clicks. A dynamic band
+    // also moves its gain with the level of a detector signal.
     class EqBand
     {
     public:
@@ -26,6 +28,8 @@ namespace fabcutie::dsp
 
             current = target;
             fade = current.enabled ? 1.0f : 0.0f;
+            dynamics.prepare (sampleRate);
+            dynamicGainDb = 0.0f;
             snapToTarget();
         }
 
@@ -63,8 +67,17 @@ namespace fabcutie::dsp
         // Processes the given channels in place. stateSlots says which
         // filter memory each channel uses (0 = left/mid, 1 = right/side), so
         // a band switched between e.g. left and right never mixes them up.
-        void process (float* const* channels, const int* stateSlots, int numChannels, int numSamples) noexcept
+        // A dynamic band listens to the detector channels, or to its own
+        // input when there are none.
+        void process (float* const* channels, const int* stateSlots, int numChannels, int numSamples,
+                      const float* const* detector = nullptr, int numDetectorChannels = 0) noexcept
         {
+            if (detector == nullptr)
+            {
+                detector = channels;
+                numDetectorChannels = numChannels;
+            }
+
             const auto fadeTarget = (current.enabled && current.sameStructure (target)) ? 1.0f : 0.0f;
 
             for (int start = 0; start < numSamples; start += controlBlockSize)
@@ -78,6 +91,8 @@ namespace fabcutie::dsp
                     q.skip (n);
                     updateDesign();
                 }
+
+                updateDynamics (detector, numDetectorChannels, start, n);
 
                 std::array<float, controlBlockSize> mix;
                 for (int i = 0; i < n; ++i)
@@ -103,6 +118,14 @@ namespace fabcutie::dsp
         }
 
         const BandSettings& getCurrentSettings() const noexcept { return current; }
+
+        bool listensToSidechain() const noexcept
+        {
+            return target.dynamics.enabled && target.dynamics.source == DetectorSource::external;
+        }
+
+        // How far the dynamics currently move the band's gain, in dB.
+        float getDynamicGainDb() const noexcept { return dynamicGainDb; }
 
     private:
         static constexpr int controlBlockSize = 16;
@@ -151,6 +174,50 @@ namespace fabcutie::dsp
             return x;
         }
 
+        // Runs the detector over one control block (before the band filters
+        // it, so internal detection hears the band's input) and redesigns the
+        // filter when the gain offset has moved.
+        void updateDynamics (const float* const* detector, int numDetectorChannels, int start, int n) noexcept
+        {
+            const auto& d = target.dynamics;
+            const auto on = d.enabled && current.enabled && supportsDynamics (current.type);
+
+            if (! on && juce::exactlyEqual (dynamicGainDb, 0.0f))
+                return;
+
+            dynamics.configure (d, current.type, frequency.getCurrentValue(), q.getCurrentValue());
+
+            if (on)
+            {
+                std::array<const float*, BandDynamics::maxChannels> in {};
+                const auto count = std::min (numDetectorChannels, BandDynamics::maxChannels);
+
+                for (int c = 0; c < count; ++c)
+                    in[(size_t) c] = detector[c] + start;
+
+                dynamics.detect (in.data(), count, n);
+            }
+            else
+            {
+                // Switched off: let the gain release back to its static value.
+                dynamics.detect (nullptr, 0, n);
+            }
+
+            if (on)
+            {
+                lastThresholdDb = d.thresholdDb;
+                lastRangeDb = d.rangeDb;
+            }
+
+            const auto offset = dynamics.updateGain (lastThresholdDb, lastRangeDb, n);
+
+            if (std::abs (offset - dynamicGainDb) > 0.005f || (juce::exactlyEqual (offset, 0.0f) && ! juce::exactlyEqual (dynamicGainDb, 0.0f)))
+            {
+                dynamicGainDb = offset;
+                updateDesign();
+            }
+        }
+
         void snapToTarget() noexcept
         {
             frequency.setCurrentAndTargetValue (target.frequency);
@@ -164,7 +231,7 @@ namespace fabcutie::dsp
         {
             auto s = current;
             s.frequency = frequency.getCurrentValue();
-            s.gainDb = gainDb.getCurrentValue();
+            s.gainDb = gainDb.getCurrentValue() + dynamicGainDb;
             s.q = q.getCurrentValue();
 
             design = designBand (s, sampleRate);
@@ -198,5 +265,9 @@ namespace fabcutie::dsp
         double onePoleG = 0.0;
 
         std::array<ChannelState, maxChannels> state {};
+
+        BandDynamics dynamics;
+        float dynamicGainDb = 0.0f;
+        float lastThresholdDb = 0.0f, lastRangeDb = 0.0f;
     };
 }
