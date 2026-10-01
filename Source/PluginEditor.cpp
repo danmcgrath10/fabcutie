@@ -29,7 +29,8 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
       bandPanel (model),
       spectrum (graph, link, [&p] { return p.getSampleRate(); }),
       meter (link.outputMeter),
-      analyzerBar ([this] { return link.sidechainConnected.load(); })
+      analyzerBar ([this] { return link.sidechainConnected.load(); }),
+      matchPanel (model, link, [&p] { return p.getSampleRate(); })
 {
     using namespace fabcutie;
 
@@ -39,6 +40,7 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     addChildComponent (bandPanel);
     addAndMakeVisible (meter);
     addAndMakeVisible (analyzerBar);
+    addChildComponent (matchPanel);
 
     graph.setBackgroundLayer (&spectrum);
     graph.setPeakSource (&spectrum);
@@ -55,6 +57,17 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     graph.onRangeChanged = [this] (float db) { state.state.setProperty (rangeDbId, db, nullptr); };
     graph.onSelectionChanged = [this] { updateBandPanel(); };
     graph.onBandsChanged = [this] { updateBandPanel(); };
+
+    sketchButton.setClickingTogglesState (true);
+    sketchButton.setTooltip ("EQ Sketch: draw the curve you want on the graph and it becomes bands (Esc to stop)");
+    sketchButton.onClick = [this] { graph.setSketchMode (sketchButton.getToggleState()); };
+    graph.onSketchModeChanged = [this] (bool on) { sketchButton.setToggleState (on, juce::dontSendNotification); };
+    addAndMakeVisible (sketchButton);
+
+    matchButton.setClickingTogglesState (true);
+    matchButton.setTooltip ("EQ Match: match the input's tonal balance to a reference");
+    matchButton.onClick = [this] { matchPanel.setVisible (matchButton.getToggleState()); };
+    addAndMakeVisible (matchButton);
 
     outputGain.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, 18);
     outputGain.setTooltip ("Output gain");
@@ -92,7 +105,7 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     setLookAndFeel (&lookAndFeel);
 
     setResizable (true, true);
-    setResizeLimits (640, 380, 2400, 1500);
+    setResizeLimits (800, 380, 2400, 1500);
     setSize ((int) state.state.getProperty (editorWidthId, 960),
              (int) state.state.getProperty (editorHeightId, 580));
 }
@@ -177,6 +190,14 @@ void FabCutieAudioProcessorEditor::updateBandPanel()
     bandPanel.setBounds (x, y, width, height);
 }
 
+void FabCutieAudioProcessorEditor::updateMatchPanel()
+{
+    // Top right of the graph, clear of the range button.
+    const auto area = graph.getBounds().reduced (10, 0);
+    const auto width = juce::jmin (fabcutie::ui::MatchPanel::preferredWidth, area.getWidth());
+    matchPanel.setBounds (area.getRight() - width, area.getY() + 34, width, fabcutie::ui::MatchPanel::preferredHeight);
+}
+
 void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
 {
     using namespace fabcutie::ui;
@@ -214,16 +235,22 @@ void FabCutieAudioProcessorEditor::resized()
     header.removeFromRight (66); // "OUTPUT" label
     characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
 
-    // Below this width the labels would run into the title; the boxes'
-    // tooltips still say what they are.
-    compactHeader = getWidth() < 860;
+    // Below this width the labels would run into the Sketch and Match
+    // buttons; the boxes' tooltips still say what they are.
+    compactHeader = getWidth() < 940;
     header.removeFromRight (compactHeader ? 8 : 84); // "CHARACTER" label
     phaseBox.setBounds (header.removeFromRight (compactHeader ? 116 : 128).withSizeKeepingCentre (compactHeader ? 116 : 128, 24));
+
+    header.removeFromLeft (150); // title and version
+    sketchButton.setBounds (header.removeFromLeft (64).withSizeKeepingCentre (64, 24));
+    header.removeFromLeft (6);
+    matchButton.setBounds (header.removeFromLeft (64).withSizeKeepingCentre (64, 24));
 
     analyzerBar.setBounds (area.removeFromBottom (analyzerBarHeight));
     meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
     graph.setBounds (area);
     updateBandPanel();
+    updateMatchPanel();
 
     state.state.setProperty (editorWidthId, getWidth(), nullptr);
     state.state.setProperty (editorHeightId, getHeight(), nullptr);

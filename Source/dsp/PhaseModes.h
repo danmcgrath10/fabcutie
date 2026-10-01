@@ -43,10 +43,13 @@ namespace fabcutie::dsp
     inline constexpr int basePartitionLength = 256;
 
     // Dynamic bands always run as IIR filters, after the FIR, since their
-    // gain moves faster than a kernel could be redesigned.
+    // gain moves faster than a kernel could be redesigned. Spectral bands
+    // are static in the EQ (SpectralDynamics moves their gain), so they
+    // stay in the FIR.
     inline bool runsAsIir (const BandSettings& s, PhaseMode mode) noexcept
     {
-        return mode == PhaseMode::zeroLatency || (s.dynamics.enabled && supportsDynamics (s.type));
+        return mode == PhaseMode::zeroLatency
+            || (s.dynamics.enabled && ! s.dynamics.spectral && supportsDynamics (s.type));
     }
 
     inline int phaseRateFactor (double sampleRate) noexcept

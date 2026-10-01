@@ -45,10 +45,16 @@ void FabCutieAudioProcessor::parameterChanged (const juce::String&, float)
     triggerAsyncUpdate();
 }
 
-void FabCutieAudioProcessor::handleAsyncUpdate()
+int FabCutieAudioProcessor::totalLatency() const noexcept
 {
     const auto sampleRate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
-    setLatencySamples (fabcutie::dsp::PhaseStage::latencyFor (currentPhaseMode(), currentLinearResolution(), sampleRate));
+    const auto spectralLatency = spectralRunning.load() ? fabcutie::dsp::SpectralDynamics::latencySamples : 0;
+    return fabcutie::dsp::PhaseStage::latencyFor (currentPhaseMode(), currentLinearResolution(), sampleRate) + spectralLatency;
+}
+
+void FabCutieAudioProcessor::handleAsyncUpdate()
+{
+    setLatencySamples (totalLatency());
 }
 
 void FabCutieAudioProcessor::pushBandSettings() noexcept
@@ -65,6 +71,11 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
     {
         auto settings = bandParams[(size_t) b].read();
+
+        // The spectral stage keeps running (and its latency stays put)
+        // while bypassed; it just stops changing anything.
+        spectral.setBand (b, settings);
+
         settings.enabled = settings.enabled && ! bypassed;
 
         const auto iir = fabcutie::dsp::runsAsIir (settings, mode);
@@ -75,6 +86,7 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
         eq.setBand (b, settings);
     }
 
+    spectral.setBypassed (bypassed);
     phaseStage.setBands (firBands);
 }
 
@@ -103,6 +115,24 @@ void FabCutieAudioProcessor::pushCharacterMode() noexcept
     characterStage.setMode ((fabcutie::dsp::CharacterMode) juce::jlimit (0, fabcutie::dsp::numCharacterModes - 1, index));
 }
 
+void FabCutieAudioProcessor::updateSpectralStage() noexcept
+{
+    // The spectral stage delays the signal, so it only runs (and the plugin
+    // only reports its latency) while a band uses it. Starting it clears out
+    // whatever it held from the last time.
+    const auto wanted = spectral.isActive();
+
+    if (wanted == spectralRunning)
+        return;
+
+    spectralRunning = wanted;
+
+    if (wanted)
+        spectral.reset();
+
+    triggerAsyncUpdate();
+}
+
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const juce::dsp::ProcessSpec spec { sampleRate,
@@ -129,6 +159,10 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushBandSettings();
     eq.prepare (sampleRate);
+    spectral.prepare (sampleRate);
+    spectralRunning = ! spectral.isActive();
+    updateSpectralStage();
+    setLatencySamples (totalLatency());
 
     pushSoloSettings();
     solo.prepare (sampleRate);
@@ -192,6 +226,14 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
             editorLink.external.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
     }
 
+    if (editorLink.matchLearning.load (std::memory_order_relaxed))
+    {
+        editorLink.matchSource.push (main.getArrayOfReadPointers(), numChannels, numSamples);
+
+        if (hasSidechain)
+            editorLink.matchReference.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
+    }
+
     // Natural / linear phase FIR first (it delays the signal, so the
     // sidechain is delayed to match), then the IIR bands.
     pushPhaseMode();
@@ -203,8 +245,12 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     eq.process (main, hasSidechain ? &sidechain : nullptr);
 
+    updateSpectralStage();
+    if (spectralRunning)
+        spectral.process (main, hasSidechain ? &sidechain : nullptr);
+
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
-        dynamicGains[(size_t) b].store (eq.getDynamicGainDb (b), std::memory_order_relaxed);
+        dynamicGains[(size_t) b].store (eq.getDynamicGainDb (b) + spectral.getGainDb (b), std::memory_order_relaxed);
 
     pushCharacterMode();
     characterStage.process (main);

@@ -9,6 +9,7 @@
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
 #include "dsp/PhaseModes.h"
+#include "dsp/SpectralDynamics.h"
 #include "ui/EqModel.h"
 
 class FabCutieAudioProcessor final : public juce::AudioProcessor,
@@ -66,6 +67,8 @@ private:
 
     fabcutie::dsp::PhaseStage phaseStage;
     fabcutie::dsp::EqEngine eq;
+    fabcutie::dsp::SpectralDynamics spectral;
+    std::atomic<bool> spectralRunning { false }; // read on the message thread for latency
     fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
     fabcutie::dsp::BandSolo solo;
@@ -76,6 +79,7 @@ private:
     void pushBandSettings() noexcept;
     void pushSoloSettings() noexcept;
     void pushCharacterMode() noexcept;
+    void updateSpectralStage() noexcept;
     void pushPhaseMode() noexcept;
 
     bool hostBypassed = false; // inside processBlockBypassed
@@ -83,8 +87,10 @@ private:
 
     fabcutie::dsp::PhaseMode currentPhaseMode() const noexcept;
     int currentLinearResolution() const noexcept;
+    int totalLatency() const noexcept; // phase mode plus spectral dynamics
 
-    // Latency follows the phase mode; the host is told from the message thread.
+    // Latency follows the phase mode and spectral dynamics; the host is told
+    // from the message thread.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void handleAsyncUpdate() override;
 

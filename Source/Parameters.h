@@ -18,6 +18,7 @@ namespace fabcutie::params
     inline constexpr int pianoRollVersion = 4; // piano roll display
     inline constexpr int dynamicsVersion = 5; // per-band dynamic EQ parameters
     inline constexpr int phaseVersion = 6; // phase mode and linear phase resolution
+    inline constexpr int spectralVersion = 7; // per-band spectral dynamics switch
 
     namespace id
     {
@@ -54,10 +55,11 @@ namespace fabcutie::params
     enum class BandParam
     {
         enabled, type, frequency, gain, q, slope, placement,
-        dynamic, threshold, range, attack, release, detectorSource, detectorFilter
+        dynamic, threshold, range, attack, release, detectorSource, detectorFilter,
+        spectral
     };
 
-    inline constexpr int numBandParams = 14;
+    inline constexpr int numBandParams = 15;
 
     juce::String bandParamId (int bandIndex, BandParam param);
 
@@ -89,6 +91,7 @@ namespace fabcutie::params
         std::atomic<float>* release = nullptr;
         std::atomic<float>* detectorSource = nullptr;
         std::atomic<float>* detectorFilter = nullptr;
+        std::atomic<float>* spectral = nullptr;
 
         void attach (juce::AudioProcessorValueTreeState& state, int bandIndex);
         dsp::BandSettings read() const noexcept;
