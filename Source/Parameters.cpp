@@ -75,6 +75,11 @@ namespace fabcutie::params
         return { "Stereo", "Left", "Right", "Mid", "Side" };
     }
 
+    juce::StringArray characterNames()
+    {
+        return { "Clean", "Gentle", "Warm" };
+    }
+
     juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     {
         juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -94,6 +99,12 @@ namespace fabcutie::params
             juce::ParameterID { id::bypass, version },
             "Bypass",
             false));
+
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::character, characterVersion },
+            "Character",
+            characterNames(),
+            (int) dsp::CharacterMode::clean));
 
         const auto frequencyAttributes = juce::AudioParameterFloatAttributes()
                                              .withLabel ("Hz")
