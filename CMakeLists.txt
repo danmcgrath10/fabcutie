@@ -48,7 +48,7 @@ juce_add_plugin(FabCutie
     DESCRIPTION             "Open-source parametric EQ"
     FORMATS                 ${FABCUTIE_FORMATS}
     IS_SYNTH                FALSE
-    NEEDS_MIDI_INPUT        FALSE
+    NEEDS_MIDI_INPUT        TRUE
     NEEDS_MIDI_OUTPUT       FALSE
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
@@ -66,7 +66,15 @@ target_sources(FabCutie PRIVATE
     Source/ui/BandPanel.cpp
     Source/ui/SpectrumDisplay.cpp
     Source/ui/LevelMeter.cpp
-    Source/ui/AnalyzerBar.cpp)
+    Source/ui/AnalyzerBar.cpp
+    Source/ui/BandClipboard.cpp
+    Source/ui/WorkflowBar.cpp
+    Source/ui/OutputBar.cpp
+    Source/ui/MidiLearnMenu.cpp
+    Source/ui/ValueEntry.cpp
+    Source/workflow/ParameterSet.cpp
+    Source/workflow/History.cpp
+    Source/workflow/Presets.cpp)
 
 target_include_directories(FabCutie PRIVATE Source)
 
@@ -86,8 +94,9 @@ target_link_libraries(FabCutie
         juce::juce_recommended_warning_flags)
 
 # ---------------------------------------------------------------------------
-# Offline DSP tests (run with ctest). They only need juce_audio_basics (and
-# juce_dsp for the character stage), so they build without the plugin formats.
+# Offline tests (run with ctest). They only need juce_audio_basics (juce_dsp
+# for the character stage, juce_audio_processors for the workflow tests), so
+# they build without the plugin formats.
 # ---------------------------------------------------------------------------
 option(FABCUTIE_BUILD_TESTS "Build the DSP tests" ON)
 
@@ -133,4 +142,23 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME DynamicEqTests COMMAND FabCutieDynamicTests)
+
+    juce_add_console_app(FabCutieWorkflowTests PRODUCT_NAME "FabCutieWorkflowTests")
+    target_sources(FabCutieWorkflowTests PRIVATE
+        Tests/WorkflowTests.cpp
+        Source/Parameters.cpp
+        Source/workflow/ParameterSet.cpp
+        Source/workflow/History.cpp
+        Source/workflow/Presets.cpp)
+    target_include_directories(FabCutieWorkflowTests PRIVATE Source)
+    target_compile_definitions(FabCutieWorkflowTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieWorkflowTests
+        PRIVATE
+            juce::juce_audio_processors
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME WorkflowTests COMMAND FabCutieWorkflowTests)
 endif()

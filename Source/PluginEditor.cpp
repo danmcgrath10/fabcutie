@@ -1,6 +1,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 #include "Parameters.h"
+#include "ui/ValueEntry.h"
 
 namespace
 {
@@ -23,7 +24,11 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
       bandPanel (model),
       spectrum (graph, link, [&p] { return p.getSampleRate(); }),
       meter (link.outputMeter),
-      analyzerBar ([this] { return link.sidechainConnected.load(); })
+      analyzerBar ([this] { return link.sidechainConnected.load(); }),
+      workflowBar (p.getHistory(), p.getABCompare(), p.getPresets(), p.getMidiLearn()),
+      outputBar (p.getState(), [&p] { return p.getAutoGainDb(); }),
+      midiLearnMenu (p.getParameterSet(), p.getMidiLearn()),
+      history (p.getHistory())
 {
     using namespace fabcutie;
 
@@ -33,6 +38,8 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     addChildComponent (bandPanel);
     addAndMakeVisible (meter);
     addAndMakeVisible (analyzerBar);
+    addAndMakeVisible (workflowBar);
+    addAndMakeVisible (outputBar);
 
     graph.setBackgroundLayer (&spectrum);
     graph.setPeakSource (&spectrum);
@@ -49,6 +56,9 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     graph.onRangeChanged = [this] (float db) { state.state.setProperty (rangeDbId, db, nullptr); };
     graph.onSelectionChanged = [this] { updateBandPanel(); };
     graph.onBandsChanged = [this] { updateBandPanel(); };
+    graph.onEnterValues = [this] (int band) { ui::ValueEntry::show (*this, model, band); };
+
+    workflowBar.onSizeChosen = [this] (int w, int h) { setSize (w, h); };
 
     outputGain.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, 18);
     outputGain.setTooltip ("Output gain");
@@ -66,11 +76,26 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     bypassAttachment     = std::make_unique<ButtonAttachment> (state, params::id::bypass, bypassButton);
     characterAttachment  = std::make_unique<ComboBoxAttachment> (state, params::id::character, characterBox);
 
+    // Right-click MIDI learn on every knob and choice.
+    const auto fixed = [] (const char* id) { return [id] { return juce::String (id); }; };
+    midiLearnMenu.watch (outputGain, fixed (params::id::outputGain));
+    midiLearnMenu.watch (characterBox, fixed (params::id::character));
+    midiLearnMenu.watch (outputBar.getGainScaleSlider(), fixed (params::id::gainScale));
+
+    bandPanel.forEachControl ([this] (juce::Component& c, params::BandParam param)
+    {
+        midiLearnMenu.watch (c, [this, param]
+        {
+            const auto band = bandPanel.getBand();
+            return band >= 0 ? params::bandParamId (band, param) : juce::String();
+        });
+    });
+
     // After the children exist, so they all pick it up.
     setLookAndFeel (&lookAndFeel);
 
     setResizable (true, true);
-    setResizeLimits (640, 380, 2400, 1500);
+    setResizeLimits (800, 400, 2400, 1500);
     setSize ((int) state.state.getProperty (editorWidthId, 960),
              (int) state.state.getProperty (editorHeightId, 580));
 }
@@ -82,6 +107,25 @@ FabCutieAudioProcessorEditor::~FabCutieAudioProcessorEditor()
     graph.setPeakSource (nullptr);
     graph.setBackgroundLayer (nullptr);
     setLookAndFeel (nullptr);
+}
+
+bool FabCutieAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    const auto cmd = juce::ModifierKeys::commandModifier;
+
+    if (key == juce::KeyPress ('z', cmd, 0))
+    {
+        history.undo();
+        return true;
+    }
+
+    if (key == juce::KeyPress ('z', cmd | juce::ModifierKeys::shiftModifier, 0) || key == juce::KeyPress ('y', cmd, 0))
+    {
+        history.redo();
+        return true;
+    }
+
+    return false;
 }
 
 void FabCutieAudioProcessorEditor::applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings& s)
@@ -125,6 +169,9 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (20.0f, juce::Font::bold));
     g.drawText ("FabCutie", header, juce::Justification::centredLeft);
 
+    if (compactHeader)
+        return;
+
     g.setColour (colours::textDim.withMultipliedAlpha (0.6f));
     g.setFont (juce::FontOptions (12.0f));
     g.drawText ("v" JucePlugin_VersionString, header.withTrimmedLeft (98), juce::Justification::centredLeft);
@@ -139,14 +186,20 @@ void FabCutieAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds();
     auto header = area.removeFromTop (headerHeight).reduced (16, 6);
+    compactHeader = getWidth() < 1000;
 
     bypassButton.setBounds (header.removeFromRight (72).withSizeKeepingCentre (72, 24));
     header.removeFromRight (16);
     outputGain.setBounds (header.removeFromRight (100));
-    header.removeFromRight (66); // "OUTPUT" label
+    header.removeFromRight (compactHeader ? 8 : 66); // "OUTPUT" label
     characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
+    header.removeFromRight (compactHeader ? 12 : 86); // "CHARACTER" label
+    header.removeFromLeft (compactHeader ? 104 : 140); // name and version
+    workflowBar.setBounds (header);
 
-    analyzerBar.setBounds (area.removeFromBottom (analyzerBarHeight));
+    auto bottom = area.removeFromBottom (analyzerBarHeight);
+    outputBar.setBounds (bottom.removeFromRight (fabcutie::ui::OutputBar::preferredWidth));
+    analyzerBar.setBounds (bottom);
     meter.setBounds (area.removeFromRight (meterWidth).withTrimmedTop (8));
     graph.setBounds (area);
     updateBandPanel();

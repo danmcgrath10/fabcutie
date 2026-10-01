@@ -12,6 +12,9 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
     bypass       = state.getRawParameterValue (fabcutie::params::id::bypass);
     character    = state.getRawParameterValue (fabcutie::params::id::character);
+    autoGain     = state.getRawParameterValue (fabcutie::params::id::autoGain);
+    gainScale    = state.getRawParameterValue (fabcutie::params::id::gainScale);
+    phaseInvert  = state.getRawParameterValue (fabcutie::params::id::phaseInvert);
 
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
         bandParams[(size_t) b].attach (state, b);
@@ -22,13 +25,27 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     // Bypass switches every band off, so the EQ fades out (and back in)
     // without clicks instead of jumping.
     const auto bypassed = bypass->load() >= 0.5f;
+    const auto scale = gainScale->load() / 100.0f;
+    fabcutie::dsp::AutoGain::Bands bands;
 
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
     {
         auto settings = bandParams[(size_t) b].read();
         settings.enabled = settings.enabled && ! bypassed;
+        fabcutie::params::applyGainScale (settings, scale);
         eq.setBand (b, settings);
+        bands[(size_t) b] = settings;
     }
+
+    const auto offset = autoGain->load() >= 0.5f ? autoGainStage.update (bands, currentSampleRate) : 0.0f;
+    autoGainDb.store (offset, std::memory_order_relaxed);
+}
+
+void FabCutieAudioProcessor::pushOutputSettings() noexcept
+{
+    outputStage.setGainDecibels (outputGainDb->load() + autoGainDb.load (std::memory_order_relaxed),
+                                 bypass->load() >= 0.5f,
+                                 phaseInvert->load() >= 0.5f);
 }
 
 void FabCutieAudioProcessor::pushSoloSettings() noexcept
@@ -56,6 +73,7 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
                                         static_cast<juce::uint32> (samplesPerBlock),
                                         static_cast<juce::uint32> (getTotalNumOutputChannels()) };
 
+    currentSampleRate = sampleRate;
     pushBandSettings();
     eq.prepare (sampleRate);
 
@@ -65,7 +83,7 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     pushCharacterMode();
     characterStage.prepare (sampleRate, samplesPerBlock, getTotalNumOutputChannels());
 
-    outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
+    pushOutputSettings();
     outputStage.prepare (spec);
 }
 
@@ -92,9 +110,11 @@ bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
     return true;
 }
 
-void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    midiLearn.process (midi);
 
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
@@ -130,7 +150,7 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     pushCharacterMode();
     characterStage.process (main);
 
-    outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
+    pushOutputSettings();
     outputStage.process (main);
 
     pushSoloSettings();
@@ -149,15 +169,41 @@ juce::AudioProcessorEditor* FabCutieAudioProcessor::createEditor()
 
 void FabCutieAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    if (auto xml = state.copyState().createXml())
+    using namespace fabcutie::workflow;
+
+    // The A/B slot, MIDI map and preset name ride along as child trees.
+    auto copy = state.copyState();
+
+    for (const auto& type : { ABCompare::treeType, MidiLearn::treeType, Presets::treeType })
+        copy.removeChild (copy.getChildWithName (type), nullptr);
+
+    copy.appendChild (abCompare.toTree(), nullptr);
+    copy.appendChild (midiLearn.toTree(), nullptr);
+    copy.appendChild (presets.toTree(), nullptr);
+
+    if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
 void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    if (auto xml = getXmlFromBinary (data, sizeInBytes))
-        if (xml->hasTagName (state.state.getType()))
-            state.replaceState (juce::ValueTree::fromXml (*xml));
+    using namespace fabcutie::workflow;
+
+    auto xml = getXmlFromBinary (data, sizeInBytes);
+
+    if (xml == nullptr || ! xml->hasTagName (state.state.getType()))
+        return;
+
+    const auto tree = juce::ValueTree::fromXml (*xml);
+    state.replaceState (tree);
+
+    abCompare.fromTree (tree.getChildWithName (ABCompare::treeType));
+    midiLearn.fromTree (tree.getChildWithName (MidiLearn::treeType));
+    presets.fromTree (tree.getChildWithName (Presets::treeType));
+
+    // A restored session starts a fresh undo history.
+    if (juce::MessageManager::existsAndIsCurrentThread())
+        history.reset();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

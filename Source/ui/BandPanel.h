@@ -23,6 +23,10 @@ namespace fabcutie::ui
         // Where the soloed band is kept (shared with the audio thread).
         void setSoloTarget (std::atomic<int>* target) noexcept { soloTarget = target; }
 
+        // Calls back with every control that edits a band parameter, e.g. to
+        // offer MIDI learn on them.
+        void forEachControl (const std::function<void (juce::Component&, params::BandParam)>&);
+
         static constexpr int preferredWidth  = 420;
         static constexpr int preferredHeight = 222;
 

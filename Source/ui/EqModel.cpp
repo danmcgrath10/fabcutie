@@ -18,6 +18,9 @@ namespace fabcutie::ui
 
         pianoRoll = state.getRawParameterValue (params::id::pianoRoll);
         jassert (pianoRoll != nullptr);
+
+        gainScale = state.getRawParameterValue (params::id::gainScale);
+        jassert (gainScale != nullptr);
     }
 
     void EqModel::setPianoRoll (bool on)

@@ -7,15 +7,18 @@
 #include "ui/EqGraph.h"
 #include "ui/EqModel.h"
 #include "ui/LevelMeter.h"
+#include "ui/MidiLearnMenu.h"
+#include "ui/OutputBar.h"
 #include "ui/SpectrumDisplay.h"
 #include "ui/Theme.h"
+#include "ui/WorkflowBar.h"
 
 class FabCutieAudioProcessor;
 
-// The main window: a header with output gain and bypass, the frequency graph
-// with the spectrum analyzer behind it and the output meter beside it, the
-// analyzer bar underneath, and a band panel that floats next to the selected
-// node.
+// The main window: a header with undo, presets, A/B, character, output gain
+// and bypass, the frequency graph with the spectrum analyzer behind it and the
+// output meter beside it, the analyzer and output bars underneath, and a band
+// panel that floats next to the selected node.
 class FabCutieAudioProcessorEditor final : public juce::AudioProcessorEditor
 {
 public:
@@ -24,6 +27,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    bool keyPressed (const juce::KeyPress&) override;
 
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -43,6 +47,10 @@ private:
     fabcutie::ui::SpectrumDisplay spectrum;
     fabcutie::ui::LevelMeter meter;
     fabcutie::ui::AnalyzerBar analyzerBar;
+    fabcutie::ui::WorkflowBar workflowBar;
+    fabcutie::ui::OutputBar outputBar;
+    fabcutie::ui::MidiLearnMenu midiLearnMenu;
+    fabcutie::workflow::History& history;
 
     juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
     juce::TextButton bypassButton { "Bypass" };
@@ -53,6 +61,9 @@ private:
     std::unique_ptr<ComboBoxAttachment> characterAttachment;
 
     juce::TooltipWindow tooltips { this, 700 };
+
+    // Narrow windows drop the header's text labels to make room for the presets.
+    bool compactHeader = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessorEditor)
 };

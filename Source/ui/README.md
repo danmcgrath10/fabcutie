@@ -13,3 +13,10 @@ Editor components.
 - `AnalyzerSettings.h`: analyzer range, speed, tilt, resolution etc., saved in the state tree.
 - `AnalyzerBar.*`: the toggles and settings menu under the graph.
 - `LevelMeter.*`: the output meter.
+- `WorkflowBar.*`: the header's undo / redo, preset browser, A/B and settings menu (window size, MIDI).
+- `OutputBar.*`: gain scale, auto gain and phase invert, beside the analyzer bar.
+- `BandClipboard.*`: copy and paste of band settings through the system clipboard.
+- `ValueEntry.*`: the box for typing a band's frequency, gain and Q.
+- `MidiLearnMenu.*`: the right-click MIDI learn menu on knobs and menus.
+
+The undo history, A/B slots, presets and MIDI map live in `Source/workflow/` and are owned by the processor, so they outlive the window.
