@@ -1,6 +1,6 @@
 # FabCutie
 
-An open-source parametric EQ plugin for macOS and Windows (AU, VST3 and Standalone), built with [JUCE](https://juce.com) and CMake.
+An open-source parametric EQ plugin for macOS and Windows (AU, VST3, CLAP and Standalone), built with [JUCE](https://juce.com) and CMake.
 
 FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q 3. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
 
@@ -11,6 +11,8 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
 - Up to 24 bands, each with: Bell, Low Shelf, Low Cut, High Shelf, High Cut, Notch, Band Pass or Tilt Shelf.
 - Cut slopes of 6, 12, 18, 24, 30, 36, 48, 72 and 96 dB/oct. For cuts, Q 1 is a flat (Butterworth) knee and higher Q adds resonance.
 - Per-band placement: Stereo, Left, Right, Mid or Side.
+- Mono, stereo and surround up to 9.1.6 (16 channels), including 5.1, 7.1, 7.1.4 (Dolby Atmos beds) and 9.1.6.
+- Instance list: see every FabCutie in the session, overlay their curves on this one, and edit any of them from this window.
 - Frequency 10 Hz to 30 kHz, gain ±30 dB, Q 0.025 to 40.
 - Every control is automatable. Frequency, gain and Q glide smoothly; switching a band's type, slope, placement or on/off (and the plugin bypass) fades rather than clicks.
 - Dynamic EQ on bell, shelf and tilt bands: switch on **DYN** in the band panel and the band's gain moves with the signal level. Above the threshold each dB over moves the gain a dB towards the range (a negative range ducks, a positive one lifts), with a 6 dB soft knee and attack and release times. The live gain change shows in the panel header.
@@ -47,6 +49,30 @@ The selected band's panel floats over the graph: type, slope, placement, frequen
 
 FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the **Side Chain** menu in the plugin window's header, then set a dynamic band's source to **External**. Bands left on **Internal** keep listening to their own input. With no sidechain selected, external bands hear silence and stay at their static gain. The same input feeds the analyzer's sidechain spectrum.
 
+## Instance list
+
+The button next to the version number names the instance the window is showing (the host's track name, or "FabCutie 1", "FabCutie 2"...). Click it to list every FabCutie in the session:
+
+- **Show** draws that instance's curve behind this one's, in its own colour, with a legend in the corner. Use it to carve space between tracks.
+- **Edit** points this window at that instance: the graph, band panel, analyzer, meter, output, bypass and character all control it, and a coloured frame says which one you are editing. **Back** returns to this window's own instance.
+- Double-click a name to rename the instance (saved with the session). Clear the name to go back to the track name.
+
+Instances find each other when the host loads them into the same process, as Logic Pro and most DAWs do. A host that runs every plug-in in its own sandboxed process shows each instance on its own.
+
+## Surround
+
+FabCutie runs on mono, stereo and every speaker layout up to 9.1.6 (16 channels), with the same layout in and out. In Logic Pro, insert it on a surround track or bus and it opens in that layout. In surround there is no mid/side matrix; a band's placement chooses speakers by where they sit, and the menus say so:
+
+| Placement | Stereo | Surround |
+|---|---|---|
+| Stereo / All | both channels | every speaker |
+| Left | left | the speakers on the left (L, Ls, Lrs, Ltf...) |
+| Right | right | the speakers on the right |
+| Mid / Centre | the mid signal | the centre line: C, LFE, Cs and the top/bottom centres |
+| Side / Sides | the side signal | every speaker off the centre line |
+
+The sidechain input stays mono or stereo. Surround always runs at Zero Latency, and spectral bands work as ordinary dynamic bands there, because the linear phase and spectral stages are stereo.
+
 ## Roadmap
 
 1. **Plugin skeleton** (done): JUCE/CMake project, AU/VST3/Standalone, CI with `auval`.
@@ -56,6 +82,7 @@ FabCutie has a stereo sidechain input. In Logic, choose a track or bus from the 
 5. **Workflow:** undo/redo, A/B, presets, copy and paste of bands, value entry, auto gain, gain scale, phase invert, MIDI learn.
 6. **Filter extras** (done): All Pass and Flat Tilt shapes, brickwall slope, piano roll.
 7. **Dynamic EQ** with sidechain (done) and character modes (done), then phase modes (linear and natural phase), EQ Sketch/Match and spectral dynamics.
+8. **Session features** (done): instance list, CLAP format, surround up to 9.1.6.
 
 ## The analyzer
 
@@ -71,13 +98,13 @@ These settings are saved with the session. To feed the sidechain in Logic Pro, p
 
 ## Phase modes
 
-The **PHASE** menu in the header picks how the bands are realised:
+The **PHASE** menu at the right end of the bar under the graph picks how the bands are realised:
 
 - **Zero Latency** (default): minimum-phase IIR filters, no latency. Like every digital EQ of this kind, curves near Nyquist narrow slightly ("cramping").
 - **Natural Phase**: an FIR filter built from the analog prototypes' magnitude and phase, so the EQ behaves like an analog one all the way up to Nyquist, with no cramping. Latency is about 7 ms (320 samples at 44.1/48 kHz).
 - **Linear Phase**: an FIR filter with the analog magnitude and no phase shift, so boosts and cuts don't smear transients or shift the relative timing of the low end. It pre-rings instead, most on steep cuts and narrow low bells. Pick the resolution in the same menu: Low, Medium, High, Very High or Maximum use 2048 to 32768-tap kernels (at 44.1/48 kHz, scaled up at higher rates). Higher resolution is more accurate in the low end; latency is half the kernel, from about 27 ms (Low) to 347 ms (Maximum) at 48 kHz.
 
-The plugin reports its latency to the host, so Logic Pro and other DAWs keep it in time with the other tracks. Changing mode fades the output out and back in. Dynamic bands always run as zero-latency IIR filters after the FIR, since their gain moves faster than a kernel could be redesigned; everything else (all band types, slopes and stereo/left/right/mid/side placement) works in every mode. The phase mode isn't automatable, because it changes the latency.
+The plugin reports its latency to the host, so Logic Pro and other DAWs keep it in time with the other tracks. Changing mode fades the output out and back in. Dynamic bands (other than spectral ones) always run as zero-latency IIR filters after the FIR, since their gain moves faster than a kernel could be redesigned; everything else (all band types, slopes and stereo/left/right/mid/side placement) works in every mode. The phase mode isn't automatable, because it changes the latency.
 
 ## Download a build
 
@@ -94,7 +121,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release -j
 ```
 
-JUCE is downloaded automatically on the first configure. Run the DSP tests with `ctest --test-dir build -C Release --output-on-failure`. To use a JUCE checkout you already have, add `-DFABCUTIE_JUCE_PATH=/path/to/JUCE`.
+JUCE and [clap-juce-extensions](https://github.com/free-audio/clap-juce-extensions) (for the CLAP build) are downloaded automatically on the first configure; add `-DFABCUTIE_BUILD_CLAP=OFF` to skip CLAP. Run the DSP tests with `ctest --test-dir build -C Release --output-on-failure`. To use a JUCE checkout you already have, add `-DFABCUTIE_JUCE_PATH=/path/to/JUCE`.
 
 Builds are universal (Apple Silicon and Intel). Outputs land in `build/FabCutie_artefacts/Release/`:
 
@@ -102,6 +129,7 @@ Builds are universal (Apple Silicon and Intel). Outputs land in `build/FabCutie_
 |------------|-----------------------------------|
 | AU         | `AU/FabCutie.component`           |
 | VST3       | `VST3/FabCutie.vst3`              |
+| CLAP       | `CLAP/FabCutie.clap`              |
 | Standalone | `Standalone/FabCutie.app`         |
 
 For an Xcode project instead, use `cmake -S . -B build-xcode -G Xcode` and open `build-xcode/FabCutie.xcodeproj`.
@@ -135,9 +163,11 @@ For an Xcode project instead, use `cmake -S . -B build-xcode -G Xcode` and open 
 
 4. Open Logic Pro. If FabCutie is missing, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
 
-## Install the VST3 (other DAWs)
+## Install the VST3 or CLAP (other DAWs)
 
 Copy `FabCutie.vst3` to `~/Library/Audio/Plug-Ins/VST3/` on macOS or `C:\Program Files\Common Files\VST3\` on Windows.
+
+For CLAP hosts (Bitwig, REAPER and others), copy `FabCutie.clap` to `~/Library/Audio/Plug-Ins/CLAP/` on macOS or `C:\Program Files\Common Files\CLAP\` on Windows.
 
 ## Project layout
 
@@ -146,6 +176,7 @@ CMakeLists.txt          JUCE fetch + plugin target
 Source/
   PluginProcessor.*     audio processor, state save/restore
   PluginEditor.*        editor window
+  InstanceRegistry.h    every FabCutie in the host process, for the instance list
   Parameters.*          every automatable parameter, with stable IDs
   dsp/                  audio-thread code: EQ engine, filter design, output stage
   ui/                   editor components (frequency graph, analyzer, meter)

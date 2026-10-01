@@ -3,19 +3,20 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include "BandDynamics.h"
+#include "ChannelLayout.h"
 #include "FilterDesign.h"
 
 namespace fabcutie::dsp
 {
-    // One EQ band running on up to two channels (left/right or mid/side,
-    // chosen by EqEngine). Frequency, gain and Q glide to new values;
+    // One EQ band running on up to 16 channels (left/right, mid/side or
+    // surround speakers, chosen by EqEngine). Frequency, gain and Q glide to new values;
     // changes to type, slope, placement or on/off fade the band's effect out,
     // swap the filter and fade it back in, so nothing clicks. A dynamic band
     // also moves its gain with the level of a detector signal.
     class EqBand
     {
     public:
-        static constexpr int maxChannels = 2;
+        static constexpr int maxChannels = dsp::maxChannels;
 
         void prepare (double newSampleRate)
         {
@@ -65,8 +66,9 @@ namespace fabcutie::dsp
         }
 
         // Processes the given channels in place. stateSlots says which
-        // filter memory each channel uses (0 = left/mid, 1 = right/side), so
-        // a band switched between e.g. left and right never mixes them up.
+        // filter memory each channel uses (0 = left/mid, 1 = right/side, the
+        // channel index in surround), so a band switched between e.g. left
+        // and right never mixes them up.
         // A dynamic band listens to the detector channels, or to its own
         // input when there are none.
         void process (float* const* channels, const int* stateSlots, int numChannels, int numSamples,

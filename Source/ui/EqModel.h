@@ -71,6 +71,16 @@ namespace fabcutie::ui
             return s.type != dsp::FilterType::flatTilt && ! (usesSlope (s.type) && dsp::isBrickwall (s.slopeIndex));
         }
 
+        // Placement names as the band panel and menus show them. In surround
+        // they select speakers by side rather than mid/side (see EqEngine).
+        static juce::StringArray placementNames (bool surround)
+        {
+            if (surround)
+                return { "All", "Left", "Right", "Centre", "Sides" };
+
+            return params::placementNames();
+        }
+
         static bool usesDynamics (dsp::FilterType t) noexcept { return dsp::supportsDynamics (t); }
 
         // Live gain offset of each dynamic band, written by the processor.

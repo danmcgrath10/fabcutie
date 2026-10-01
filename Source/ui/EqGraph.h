@@ -66,6 +66,20 @@ namespace fabcutie::ui
         // mouse, e.g. a spectrum analyzer. Pass nullptr to remove it.
         void setBackgroundLayer (juce::Component* layer);
 
+        // Other instances' combined curves drawn faintly behind this one's
+        // (instance list), each in its own colour and labelled with its name.
+        struct Overlay
+        {
+            juce::String name;
+            juce::Colour colour;
+            std::array<dsp::BandSettings, dsp::maxBands> bands {};
+        };
+
+        void setOverlays (std::vector<Overlay>);
+
+        // Names placements by speaker side (surround) instead of mid/side.
+        void setSurround (bool);
+
         // Natural and linear phase draw the analog curves the FIR runs
         // (dynamic bands stay IIR, so they keep the digital curve).
         void setPhaseMode (dsp::PhaseMode mode) noexcept
@@ -149,6 +163,8 @@ namespace fabcutie::ui
         juce::Path curvePath (const std::vector<float>& db) const;
         void drawCurves (juce::Graphics&);
         void drawNodes (juce::Graphics&);
+        void drawOverlays (juce::Graphics&);
+        void recomputeOverlays();
         void drawReadout (juce::Graphics&, int band);
         void drawRangeButton (juce::Graphics&);
         void drawSoloBanner (juce::Graphics&);
@@ -179,11 +195,15 @@ namespace fabcutie::ui
         bool curvesValid = false;
         dsp::PhaseMode phaseMode = dsp::PhaseMode::zeroLatency;
         bool pianoRollShown = false;
+        bool surround = false;
 
         std::vector<float> pointX, pointHz;
         std::array<std::vector<float>, dsp::maxBands> bandDb;
         std::array<std::vector<float>, dsp::numPlacements> placementDb; // stereo bands + that placement's bands
         std::array<bool, dsp::numPlacements> placementUsed {};
+
+        std::vector<Overlay> overlays;
+        std::vector<std::vector<float>> overlayDb;
 
         juce::Array<int> selection;
         int primary = -1;

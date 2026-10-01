@@ -12,6 +12,7 @@
 
 #include "dsp/AudioTap.h"
 #include "dsp/BandSolo.h"
+#include "dsp/ChannelLayout.h"
 #include "dsp/EqEngine.h"
 #include "dsp/Notes.h"
 #include "dsp/PeakMeter.h"
@@ -437,6 +438,89 @@ namespace
         check (std::abs (10.0 * std::log10 (out / in) + 6.0) < 0.1, "mono: mid bands apply, side bands do not");
     }
 
+    // Surround: placements pick speakers by side, every channel keeps its own
+    // filter memory, and the largest layout (9.1.6) is handled in full.
+    std::vector<double> measureSurround (const juce::AudioChannelSet& layout, const BandSettings& b, double freq)
+    {
+        EqEngine eq;
+        eq.setChannelMap (ChannelMap::fromLayout (layout));
+        eq.setBand (0, b);
+        eq.prepare (sampleRate);
+
+        const auto numChannels = layout.size();
+        juce::AudioBuffer<float> buffer (numChannels, blockSize);
+        std::vector<double> out ((size_t) numChannels, 0.0);
+        double phase = 0.0, in = 0.0;
+        const auto inc = 2.0 * juce::MathConstants<double>::pi * freq / sampleRate;
+
+        for (int block = 0; block < 150; ++block)
+        {
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto x = (float) std::sin (phase);
+                phase = std::fmod (phase + inc, 2.0 * juce::MathConstants<double>::pi);
+                for (int c = 0; c < numChannels; ++c)
+                    buffer.setSample (c, i, x);
+                if (block >= 100) in += (double) x * x;
+            }
+
+            eq.process (buffer);
+
+            if (block >= 100)
+                for (int c = 0; c < numChannels; ++c)
+                    for (int i = 0; i < blockSize; ++i)
+                        out[(size_t) c] += juce::square ((double) buffer.getSample (c, i));
+        }
+
+        for (auto& o : out)
+            o = 10.0 * std::log10 (std::max (o, 1.0e-30) / in);
+
+        return out;
+    }
+
+    void testSurround()
+    {
+        using CT = juce::AudioChannelSet::ChannelType;
+        const auto layout = juce::AudioChannelSet::create5point1();
+        const auto map = ChannelMap::fromLayout (layout);
+
+        check (map.isSurround() && map.numChannels == 6, "surround: 5.1 has six channels");
+        check (ChannelMap::sideOf (CT::leftSurround) == ChannelSide::left && ChannelMap::sideOf (CT::rightSurround) == ChannelSide::right
+                   && ChannelMap::sideOf (CT::centre) == ChannelSide::centre && ChannelMap::sideOf (CT::LFE) == ChannelSide::centre,
+               "surround: speaker sides");
+
+        const auto expect = [&] (Placement p, const std::string& name, auto shouldBoost)
+        {
+            const auto db = measureSurround (layout, band (FilterType::bell, 1000, 12, 1, 1, p), 1000);
+            auto ok = true;
+
+            for (int c = 0; c < layout.size(); ++c)
+            {
+                const auto boosted = shouldBoost (map.sides[(size_t) c]);
+                ok = ok && (boosted ? std::abs (db[(size_t) c] - 12.0) < 0.1 : std::abs (db[(size_t) c]) < 1.0e-6);
+            }
+
+            check (ok, "surround: " + name);
+        };
+
+        expect (Placement::stereo, "stereo placement boosts every speaker", [] (ChannelSide) { return true; });
+        expect (Placement::left,   "left placement boosts only left speakers", [] (ChannelSide s) { return s == ChannelSide::left; });
+        expect (Placement::right,  "right placement boosts only right speakers", [] (ChannelSide s) { return s == ChannelSide::right; });
+        expect (Placement::mid,    "mid placement boosts only the centre line", [] (ChannelSide s) { return s == ChannelSide::centre; });
+        expect (Placement::side,   "side placement boosts every speaker off the centre", [] (ChannelSide s) { return s != ChannelSide::centre; });
+
+        const auto big = juce::AudioChannelSet::create9point1point6();
+        check (big.size() == 16 && isSupportedSurroundLayout (big), "surround: 9.1.6 is offered");
+        check (! isSupportedSurroundLayout (juce::AudioChannelSet::discreteChannels (4)), "surround: discrete layouts are not offered");
+        check (! isSupportedSurroundLayout (juce::AudioChannelSet::ambisonic (1)), "surround: ambisonics are not offered");
+
+        const auto db = measureSurround (big, band (FilterType::highShelf, 2000, -9, 0.7f), 15000);
+        auto all = true;
+        for (auto d : db)
+            all = all && std::abs (d + 9.0) < 0.2;
+        check (all, "surround: a 9.1.6 band processes all 16 channels");
+    }
+
     // The graph's pixel mapping must round-trip, so dragging a node lands
     // exactly where the pointer is.
     void testGraphGeometry()
@@ -624,6 +708,7 @@ int main()
     testNotes();
     testPlacement();
     testMono();
+    testSurround();
     testSmoothSwitching();
     testAutomationStability();
     testGraphGeometry();

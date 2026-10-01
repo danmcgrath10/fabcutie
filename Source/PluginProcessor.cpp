@@ -18,19 +18,85 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
         bandParams[(size_t) b].attach (state, b);
 
+    instanceNumber = registry->add (*this);
     state.addParameterListener (fabcutie::params::id::phaseMode, this);
     state.addParameterListener (fabcutie::params::id::linearResolution, this);
 }
 
 FabCutieAudioProcessor::~FabCutieAudioProcessor()
 {
+    // First, so editors showing this instance let go of it while it is whole.
+    registry->remove (*this);
+
     state.removeParameterListener (fabcutie::params::id::phaseMode, this);
     state.removeParameterListener (fabcutie::params::id::linearResolution, this);
     cancelPendingUpdate();
 }
 
+namespace
+{
+    // Saved in the state tree next to the parameters.
+    const juce::Identifier instanceNameId { "instanceName" };
+}
+
+juce::String FabCutieAudioProcessor::getCustomInstanceName() const
+{
+    return state.state.getProperty (instanceNameId).toString();
+}
+
+void FabCutieAudioProcessor::setCustomInstanceName (const juce::String& name)
+{
+    const auto trimmed = name.trim().substring (0, 64);
+
+    if (trimmed.isEmpty())
+        state.state.removeProperty (instanceNameId, nullptr);
+    else
+        state.state.setProperty (instanceNameId, trimmed, nullptr);
+
+    registry->notifyChanged();
+}
+
+juce::String FabCutieAudioProcessor::getInstanceName() const
+{
+    if (const auto custom = getCustomInstanceName(); custom.isNotEmpty())
+        return custom;
+
+    {
+        const juce::SpinLock::ScopedLockType sl (trackNameLock);
+        if (trackName.isNotEmpty())
+            return trackName;
+    }
+
+    return "FabCutie " + juce::String (instanceNumber);
+}
+
+void FabCutieAudioProcessor::updateTrackProperties (const TrackProperties& properties)
+{
+    {
+        const juce::SpinLock::ScopedLockType sl (trackNameLock);
+        trackName = properties.name.value_or (juce::String()).trim();
+    }
+
+    registry->notifyChanged();
+}
+
+std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> FabCutieAudioProcessor::readBands() const noexcept
+{
+    std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> bands;
+
+    for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
+        bands[(size_t) b] = bandParams[(size_t) b].read();
+
+    return bands;
+}
+
 fabcutie::dsp::PhaseMode FabCutieAudioProcessor::currentPhaseMode() const noexcept
 {
+    // The FIR and the spectral stage are stereo, so surround layouts run
+    // every band as IIR, with no latency.
+    if (surroundLayout.load())
+        return fabcutie::dsp::PhaseMode::zeroLatency;
+
     return (fabcutie::dsp::PhaseMode) juce::jlimit (0, fabcutie::dsp::numPhaseModes - 1, juce::roundToInt (phaseMode->load()));
 }
 
@@ -71,6 +137,10 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
     {
         auto settings = bandParams[(size_t) b].read();
+
+        // In surround spectral bands work as ordinary dynamic bands.
+        if (surroundLayout.load (std::memory_order_relaxed))
+            settings.dynamics.spectral = false;
 
         // The spectral stage keeps running (and its latency stays put)
         // while bypassed; it just stops changing anything.
@@ -139,6 +209,11 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
                                         static_cast<juce::uint32> (samplesPerBlock),
                                         static_cast<juce::uint32> (getTotalNumOutputChannels()) };
 
+    channelMap = fabcutie::dsp::ChannelMap::fromLayout (getChannelLayoutOfBus (false, 0));
+    editorLink.mainChannels.store (channelMap.numChannels);
+    eq.setChannelMap (channelMap);
+    surroundLayout.store (channelMap.numChannels > 2);
+
     // The phase stage starts straight in the session's mode, with its
     // first kernel designed, so playback begins with the right latency.
     {
@@ -178,7 +253,9 @@ bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
 {
     const auto& out = layouts.getMainOutputChannelSet();
 
-    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
+    // Mono, stereo, or a surround layout up to 9.1.6, the same in and out.
+    if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo()
+        && ! fabcutie::dsp::isSupportedSurroundLayout (out))
         return false;
 
     if (out != layouts.getMainInputChannelSet())
@@ -216,7 +293,7 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     auto sidechain = hasSidechain ? getBusBuffer (buffer, true, 1) : juce::AudioBuffer<float>();
     editorLink.sidechainConnected.store (hasSidechain, std::memory_order_relaxed);
 
-    const auto analyze = editorLink.analyzerActive.load (std::memory_order_relaxed);
+    const auto analyze = editorLink.analyzerUsers.load (std::memory_order_relaxed) > 0;
 
     if (analyze)
     {
@@ -298,6 +375,7 @@ void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBy
         if (xml->hasTagName (state.state.getType()))
         {
             state.replaceState (juce::ValueTree::fromXml (*xml));
+            registry->notifyChanged(); // the saved name may differ
 
             // Let the host know the session's latency before playback starts.
             handleAsyncUpdate();

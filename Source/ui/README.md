@@ -14,4 +14,7 @@ Editor components.
 - `AnalyzerSettings.h`: analyzer range, speed, tilt, resolution etc., saved in the state tree.
 - `AnalyzerBar.*`: the toggles and settings menu under the graph.
 - `LevelMeter.*`: the output meter.
+- `InstanceList.*`: the instance list panel (show another instance's curve, edit it here, rename).
+  The editor swaps everything bound to one instance (model, graph, band panel, analyzer, meter,
+  header attachments) when it is pointed at another; `EqGraph::setOverlays` draws the shown curves.
 - `MatchPanel.*`: EQ Match: reference choice, capture, learn, amount, band count, preview and Apply.

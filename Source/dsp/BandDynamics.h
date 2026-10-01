@@ -21,7 +21,7 @@ namespace fabcutie::dsp
     class BandDynamics
     {
     public:
-        static constexpr int maxChannels = 2;
+        static constexpr int maxChannels = 16; // as many as the bands (ChannelLayout.h)
 
         // Width of the soft knee around the threshold, in dB.
         static constexpr float kneeDb = 6.0f;

@@ -24,13 +24,13 @@ namespace fabcutie::ui
             return hz >= 1000.0f ? juce::String ((int) (hz / 1000.0f)) + "k" : juce::String ((int) hz);
         }
 
-        const char* placementLetter (int placement)
+        const char* placementLetter (int placement, bool surround)
         {
             switch ((dsp::Placement) placement)
             {
                 case dsp::Placement::left:  return "L";
                 case dsp::Placement::right: return "R";
-                case dsp::Placement::mid:   return "M";
+                case dsp::Placement::mid:   return surround ? "C" : "M";
                 case dsp::Placement::side:  return "S";
                 case dsp::Placement::stereo: break;
             }
@@ -66,6 +66,66 @@ namespace fabcutie::ui
             backgroundLayer->setInterceptsMouseClicks (false, false);
             addAndMakeVisible (backgroundLayer, 0);
             backgroundLayer->setBounds (getLocalBounds());
+        }
+    }
+
+    void EqGraph::setOverlays (std::vector<Overlay> newOverlays)
+    {
+        auto same = newOverlays.size() == overlays.size();
+
+        for (size_t i = 0; same && i < overlays.size(); ++i)
+        {
+            same = overlays[i].name == newOverlays[i].name && overlays[i].colour == newOverlays[i].colour;
+
+            for (size_t b = 0; same && b < overlays[i].bands.size(); ++b)
+                same = sameSettings (overlays[i].bands[b], newOverlays[i].bands[b]);
+        }
+
+        if (same)
+            return;
+
+        overlays = std::move (newOverlays);
+        recomputeOverlays();
+        repaint();
+    }
+
+    void EqGraph::setSurround (bool shouldBeSurround)
+    {
+        if (surround != shouldBeSurround)
+        {
+            surround = shouldBeSurround;
+            repaint();
+        }
+    }
+
+    void EqGraph::recomputeOverlays()
+    {
+        overlayDb.assign (overlays.size(), {});
+
+        if (pointHz.empty())
+            return;
+
+        const auto sampleRate = curveSampleRate > 0.0 ? curveSampleRate : 48000.0;
+
+        // Like this instance's main curve: the bands that work on every channel.
+        for (size_t o = 0; o < overlays.size(); ++o)
+        {
+            auto& curve = overlayDb[o];
+            curve.assign (pointHz.size(), 0.0f);
+
+            for (const auto& s : overlays[o].bands)
+            {
+                if (! s.enabled || s.placement != dsp::Placement::stereo)
+                    continue;
+
+                const auto design = dsp::designBand (s, sampleRate);
+
+                for (size_t i = 0; i < pointHz.size(); ++i)
+                {
+                    const auto mag = std::abs (dsp::designResponse (design, pointHz[i], sampleRate));
+                    curve[i] += (float) (20.0 * std::log10 (std::max (mag, 1.0e-12)));
+                }
+            }
         }
     }
 
@@ -254,6 +314,7 @@ namespace fabcutie::ui
         }
 
         curvesValid = true;
+        recomputeOverlays();
     }
 
     //==========================================================================
@@ -705,7 +766,7 @@ namespace fabcutie::ui
         menu.addSubMenu ("Slope", slopes, EqModel::usesSlope (s.type));
 
         juce::PopupMenu placements;
-        const auto placementNames = params::placementNames();
+        const auto placementNames = EqModel::placementNames (surround);
         for (int i = 0; i < placementNames.size(); ++i)
             placements.addItem (300 + i, placementNames[i], true, (int) s.placement == i);
         menu.addSubMenu ("Placement", placements);
@@ -912,6 +973,8 @@ namespace fabcutie::ui
         if (! curvesValid)
             return;
 
+        drawOverlays (g);
+
         const auto zeroY = geometry.yForDb (0.0f);
 
         // Individual bands: the selected and hovered ones are filled.
@@ -966,7 +1029,7 @@ namespace fabcutie::ui
             const auto labelY = juce::jlimit (plot.getY(), plot.getBottom() - 14.0f,
                                               geometry.yForDb (curve[widest]) + (above ? -30.0f : 16.0f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-            g.drawText (placementLetter (p), juce::Rectangle<float> (pointX[widest] - 7.0f, labelY, 14.0f, 14.0f),
+            g.drawText (placementLetter (p, surround), juce::Rectangle<float> (pointX[widest] - 7.0f, labelY, 14.0f, 14.0f),
                         juce::Justification::centred);
         }
 
@@ -976,6 +1039,29 @@ namespace fabcutie::ui
         g.strokePath (total, juce::PathStrokeType (6.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
         g.setColour (colours::curve);
         g.strokePath (total, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    void EqGraph::drawOverlays (juce::Graphics& g)
+    {
+        // A small legend in the top-left corner names each curve.
+        auto legend = juce::Rectangle<float> (plot.getX() + 10.0f, plot.getY() + 22.0f, 160.0f, 14.0f);
+        g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+
+        for (size_t o = 0; o < overlays.size() && o < overlayDb.size(); ++o)
+        {
+            const auto& curve = overlayDb[o];
+
+            if (curve.size() != pointX.size() || curve.empty())
+                continue;
+
+            const auto colour = overlays[o].colour;
+            g.setColour (colour.withAlpha (0.7f));
+            g.strokePath (curvePath (curve), juce::PathStrokeType (1.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+            g.fillRect (legend.withWidth (12.0f).withSizeKeepingCentre (12.0f, 2.0f));
+            g.drawText (overlays[o].name, legend.withTrimmedLeft (18.0f), juce::Justification::centredLeft);
+            legend.translate (0.0f, 15.0f);
+        }
     }
 
     void EqGraph::drawNodes (juce::Graphics& g)
