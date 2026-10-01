@@ -24,12 +24,14 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
     instanceNumber = registry->add (*this);
     state.addParameterListener (fabcutie::params::id::phaseMode, this);
     state.addParameterListener (fabcutie::params::id::linearResolution, this);
+    startTimerHz (30);
 }
 
 FabCutieAudioProcessor::~FabCutieAudioProcessor()
 {
     // First, so editors showing this instance let go of it while it is whole.
     registry->remove (*this);
+    stopTimer();
 
     state.removeParameterListener (fabcutie::params::id::phaseMode, this);
     state.removeParameterListener (fabcutie::params::id::linearResolution, this);
@@ -132,7 +134,6 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     // without clicks instead of jumping.
     const auto bypassed = isBypassed();
     const auto scale = gainScale->load() / 100.0f;
-    fabcutie::dsp::AutoGain::Bands bands;
 
     // In natural and linear phase the FIR runs the static bands and
     // EqEngine only the dynamic ones.
@@ -158,7 +159,6 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
         const auto iir = fabcutie::dsp::runsAsIir (settings, mode);
         firBands[(size_t) b] = settings;
         firBands[(size_t) b].enabled = settings.enabled && ! iir;
-        bands[(size_t) b] = settings;
 
         settings.enabled = settings.enabled && iir;
         eq.setBand (b, settings);
@@ -167,8 +167,41 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     spectral.setBypassed (bypassed);
     phaseStage.setBands (firBands);
 
-    const auto offset = autoGain->load() >= 0.5f ? autoGainStage.update (bands, currentSampleRate) : 0.0f;
+    // Live, the message thread keeps auto gain up to date; offline it is
+    // worked out here so every block uses the curve it was rendered with.
+    if (isNonRealtime())
+        updateAutoGain (audioAutoGainStage);
+}
+
+fabcutie::dsp::AutoGain::Bands FabCutieAudioProcessor::autoGainBands() const noexcept
+{
+    // The bands as they sound, gain scale included. Bypass is left out:
+    // the output stage ignores the offset while bypassed anyway, and this
+    // way it is ready the moment bypass goes off.
+    const auto scale = gainScale->load() / 100.0f;
+    fabcutie::dsp::AutoGain::Bands bands;
+
+    for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
+    {
+        auto settings = bandParams[(size_t) b].read();
+        fabcutie::params::applyGainScale (settings, scale);
+        bands[(size_t) b] = settings;
+    }
+
+    return bands;
+}
+
+void FabCutieAudioProcessor::updateAutoGain (fabcutie::dsp::AutoGain& stage) noexcept
+{
+    const auto offset = autoGain->load() >= 0.5f ? stage.update (autoGainBands(), currentSampleRate.load()) : 0.0f;
     autoGainDb.store (offset, std::memory_order_relaxed);
+}
+
+void FabCutieAudioProcessor::timerCallback()
+{
+    // Cheap when nothing changed: AutoGain only recomputes on a change.
+    if (! isNonRealtime())
+        updateAutoGain (autoGainStage);
 }
 
 void FabCutieAudioProcessor::pushOutputSettings() noexcept
@@ -253,6 +286,7 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     }
 
     pushBandSettings();
+    updateAutoGain (audioAutoGainStage);
     eq.prepare (sampleRate);
     spectral.prepare (sampleRate);
     spectralRunning = ! spectral.isActive();

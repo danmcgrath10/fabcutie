@@ -22,7 +22,8 @@
 
 class FabCutieAudioProcessor final : public juce::AudioProcessor,
                                      private juce::AudioProcessorValueTreeState::Listener,
-                                     private juce::AsyncUpdater
+                                     private juce::AsyncUpdater,
+                                     private juce::Timer
 {
 public:
     FabCutieAudioProcessor();
@@ -126,9 +127,16 @@ private:
     fabcutie::workflow::Presets presets { parameterSet, history };
     fabcutie::workflow::MidiLearn midiLearn { parameterSet };
 
-    fabcutie::dsp::AutoGain autoGainStage;
+    // Auto gain is worked out on the message thread (timerCallback), off
+    // the audio thread. prepareToPlay and offline renders work it out in
+    // place with their own copy, so a bounce is the same every time.
+    fabcutie::dsp::AutoGain autoGainStage, audioAutoGainStage;
     std::atomic<float> autoGainDb { 0.0f };
-    double currentSampleRate = 48000.0;
+    std::atomic<double> currentSampleRate { 48000.0 };
+
+    fabcutie::dsp::AutoGain::Bands autoGainBands() const noexcept;
+    void updateAutoGain (fabcutie::dsp::AutoGain& stage) noexcept;
+    void timerCallback() override;
 
     void pushOutputSettings() noexcept;
 
