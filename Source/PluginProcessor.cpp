@@ -6,7 +6,7 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), true)),
+                          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       state (*this, nullptr, "FabCutieState", fabcutie::params::createLayout())
 {
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
