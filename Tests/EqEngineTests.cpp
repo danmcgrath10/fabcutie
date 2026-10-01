@@ -1,6 +1,7 @@
 // Offline checks for the EQ engine: measured sine responses must match the
 // analytic curve, slopes and placements must behave, and the filters must
-// stay finite under heavy parameter automation.
+// stay finite under heavy parameter automation. Also covers the analyzer
+// plumbing: the audio taps, the spectrum analyzer, band solo and the meter.
 
 #include <cmath>
 #include <cstdio>
@@ -9,7 +10,11 @@
 #include <string>
 #include <vector>
 
+#include "dsp/AudioTap.h"
+#include "dsp/BandSolo.h"
 #include "dsp/EqEngine.h"
+#include "dsp/PeakMeter.h"
+#include "dsp/SpectrumAnalyzer.h"
 #include "ui/GraphGeometry.h"
 
 using namespace fabcutie::dsp;
@@ -375,6 +380,163 @@ namespace
         for (float db : { -30.0f, -3.5f, 0.0f, 7.25f, 30.0f })
             check (std::abs (geo.dbForY (geo.yForDb (db)) - db) < 1.0e-4f, "graph: gain round-trip at " + std::to_string (db));
     }
+
+    // The tap must deliver the channel average in order, and drop (not
+    // overwrite) what does not fit while nobody reads.
+    void testAudioTap()
+    {
+        AudioTap tap;
+        std::vector<float> left (1000), right (1000);
+        for (int i = 0; i < 1000; ++i)
+        {
+            left[(size_t) i] = (float) i;
+            right[(size_t) i] = (float) -i * 0.5f;
+        }
+
+        const float* channels[] { left.data(), right.data() };
+        tap.push (channels, 2, 1000);
+
+        std::vector<float> out (2000);
+        const auto got = tap.pull (out.data(), (int) out.size());
+        check (got == 1000, "tap: delivers every pushed sample");
+
+        bool exact = true;
+        for (int i = 0; i < got; ++i)
+            exact = exact && std::abs (out[(size_t) i] - (float) i * 0.25f) < 1.0e-4f;
+        check (exact, "tap: mono average of the channels, in order");
+
+        for (int block = 0; block < 100; ++block)
+            tap.push (channels, 2, 1000);
+        check (tap.getNumReady() < AudioTap::capacity, "tap: a full tap drops new samples");
+        check (tap.pull (out.data(), 1) == 1 && std::abs (out[0]) < 1.0e-6f, "tap: oldest samples kept when full");
+    }
+
+    std::vector<float> sine (double freq, float amplitude, int length)
+    {
+        std::vector<float> x ((size_t) length);
+        for (int i = 0; i < length; ++i)
+            x[(size_t) i] = amplitude * (float) std::sin (2.0 * juce::MathConstants<double>::pi * freq * i / sampleRate);
+        return x;
+    }
+
+    float analyse (SpectrumAnalyzer& analyzer, const std::vector<float>& signal, float atHz)
+    {
+        analyzer.setSampleRate (sampleRate);
+        analyzer.reset();
+
+        for (size_t start = 0; start + 512 <= signal.size(); start += 512)
+        {
+            analyzer.push (signal.data() + start, 512);
+            analyzer.update (512.0 / sampleRate, 0.05f);
+        }
+
+        // Half a bin either side, as the display asks for one pixel's span.
+        const auto halfBin = (float) sampleRate / (float) analyzer.getFftSize() * 0.5f;
+        return analyzer.levelForSpan (atHz - halfBin, atHz + halfBin);
+    }
+
+    // A full-scale sine must read about 0 dB at its frequency (within the
+    // Hann window's scalloping loss) and the rest of the spectrum must be low.
+    void testSpectrumAnalyzer()
+    {
+        for (int order = SpectrumAnalyzer::minOrder; order <= SpectrumAnalyzer::maxOrder; ++order)
+        {
+            SpectrumAnalyzer analyzer (order);
+            const auto name = "analyzer " + std::to_string (1 << order) + ": ";
+            const auto signal = sine (1000.0, 1.0f, (int) sampleRate);
+
+            const auto peak = analyse (analyzer, signal, 1000.0f);
+            check (peak < 0.2f && peak > -1.6f, name + "0 dBFS sine reads 0 dB (got " + std::to_string (peak) + ")");
+
+            const auto far = std::max (analyzer.levelForSpan (90.0f, 110.0f), analyzer.levelForSpan (9000.0f, 11000.0f));
+            check (far < -80.0f, name + "little leakage away from the sine (got " + std::to_string (far) + ")");
+
+            const auto quiet = analyse (analyzer, sine (1000.0, 0.01f, (int) sampleRate), 1000.0f);
+            check (std::abs (quiet - peak + 40.0f) < 0.5f, name + "level follows amplitude (-40 dB)");
+        }
+
+        // The display takes the loudest bin over wide spans, so a narrow peak
+        // at high frequencies is not averaged away.
+        SpectrumAnalyzer analyzer (13);
+        analyse (analyzer, sine (12000.0, 0.5f, (int) sampleRate), 12000.0f);
+        check (analyzer.levelForSpan (11000.0f, 13000.0f) > -8.0f, "analyzer: wide spans keep narrow peaks");
+
+        // Smoothing: after the signal stops the level falls, not jumps.
+        analyzer.setSampleRate (sampleRate);
+        const std::vector<float> silence (1024, 0.0f);
+        analyzer.push (silence.data(), 1024);
+        analyzer.update (0.02, 1.0f);
+        const auto afterSilence = analyzer.levelForSpan (11900.0f, 12100.0f);
+        check (afterSilence > -30.0f && afterSilence < -6.0f, "analyzer: slow release falls gradually");
+    }
+
+    double soloGainDb (FilterType type, float bandHz, float bandQ, double testHz, bool enabled = true)
+    {
+        BandSolo solo;
+        auto settings = band (type, bandHz, 6.0f, bandQ);
+        settings.enabled = enabled;
+        solo.setBand (settings);
+        solo.prepare (sampleRate);
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        double phase = 0.0, in = 0.0, out = 0.0;
+        const auto inc = 2.0 * juce::MathConstants<double>::pi * testHz / sampleRate;
+
+        for (int block = 0; block < 150; ++block)
+        {
+            for (int i = 0; i < blockSize; ++i)
+            {
+                const auto x = (float) std::sin (phase);
+                phase = std::fmod (phase + inc, 2.0 * juce::MathConstants<double>::pi);
+                buffer.setSample (0, i, x);
+                buffer.setSample (1, i, x);
+                if (block >= 50) in += (double) x * x;
+            }
+
+            solo.process (buffer, 2);
+
+            if (block >= 50)
+                for (int i = 0; i < blockSize; ++i)
+                    out += juce::square ((double) buffer.getSample (0, i));
+        }
+
+        return 10.0 * std::log10 (std::max (out, 1.0e-30) / in);
+    }
+
+    // Solo must keep the band's own region and drop the rest of the spectrum.
+    void testBandSolo()
+    {
+        check (std::abs (soloGainDb (FilterType::bell, 1000, 2, 1000)) < 0.5, "solo bell: passes its frequency");
+        check (soloGainDb (FilterType::bell, 1000, 2, 100) < -15.0, "solo bell: drops low frequencies");
+        check (soloGainDb (FilterType::bell, 1000, 2, 10000) < -15.0, "solo bell: drops high frequencies");
+        check (std::abs (soloGainDb (FilterType::notch, 3000, 8, 3000)) < 0.5, "solo notch: passes the notched frequency");
+
+        check (std::abs (soloGainDb (FilterType::lowCut, 200, 1, 40)) < 0.5, "solo low cut: passes what it removes");
+        check (soloGainDb (FilterType::lowCut, 200, 1, 2000) < -30.0, "solo low cut: drops what it keeps");
+        check (std::abs (soloGainDb (FilterType::highShelf, 5000, 1, 15000)) < 0.5, "solo high shelf: passes the shelf");
+        check (soloGainDb (FilterType::highShelf, 5000, 1, 500) < -30.0, "solo high shelf: drops below it");
+
+        for (double hz : { 50.0, 1000.0, 15000.0 })
+            check (std::abs (soloGainDb (FilterType::bell, 1000, 2, hz, false)) < 0.01, "solo off: signal untouched");
+    }
+
+    void testPeakMeter()
+    {
+        PeakMeter meter;
+        juce::AudioBuffer<float> buffer (2, 64);
+        buffer.clear();
+        buffer.setSample (0, 10, -0.5f);
+        buffer.setSample (1, 20, 0.25f);
+        meter.process (buffer, 2);
+
+        buffer.clear();
+        buffer.setSample (0, 5, 0.1f);
+        meter.process (buffer, 2);
+
+        check (std::abs (meter.takePeak (0) - 0.5f) < 1.0e-6f, "meter: keeps the highest peak until read");
+        check (std::abs (meter.takePeak (1) - 0.25f) < 1.0e-6f, "meter: channels are separate");
+        check (juce::exactlyEqual (meter.takePeak (0), 0.0f), "meter: reading clears the peak");
+    }
 }
 
 int main()
@@ -387,6 +549,10 @@ int main()
     testSmoothSwitching();
     testAutomationStability();
     testGraphGeometry();
+    testAudioTap();
+    testSpectrumAnalyzer();
+    testBandSolo();
+    testPeakMeter();
 
     if (failures == 0)
         std::printf ("All tests passed.\n");

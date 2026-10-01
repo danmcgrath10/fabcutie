@@ -18,6 +18,9 @@ namespace fabcutie::ui
         void setBand (int band);
         int getBand() const noexcept { return band; }
 
+        // Where the soloed band is kept (shared with the audio thread).
+        void setSoloTarget (std::atomic<int>* target) noexcept { soloTarget = target; }
+
         static constexpr int preferredWidth  = 420;
         static constexpr int preferredHeight = 128;
 
@@ -46,7 +49,8 @@ namespace fabcutie::ui
         std::unique_ptr<ComboBoxAttachment> typeAttachment, slopeAttachment, placementAttachment;
 
         Knob frequency, gain, q;
-        juce::TextButton removeButton;
+        juce::TextButton removeButton, soloButton;
+        std::atomic<int>* soloTarget = nullptr;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BandPanel)
     };

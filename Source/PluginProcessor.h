@@ -3,6 +3,8 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "Parameters.h"
+#include "dsp/BandSolo.h"
+#include "dsp/EditorLink.h"
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
 
@@ -39,6 +41,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getState() noexcept { return state; }
+    fabcutie::dsp::EditorLink& getEditorLink() noexcept { return editorLink; }
 
 private:
     juce::AudioProcessorValueTreeState state;
@@ -49,8 +52,11 @@ private:
 
     fabcutie::dsp::EqEngine eq;
     fabcutie::dsp::OutputStage outputStage;
+    fabcutie::dsp::BandSolo solo;
+    fabcutie::dsp::EditorLink editorLink;
 
     void pushBandSettings() noexcept;
+    void pushSoloSettings() noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessor)
 };

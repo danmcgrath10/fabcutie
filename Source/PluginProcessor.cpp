@@ -5,7 +5,8 @@
 FabCutieAudioProcessor::FabCutieAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), true)),
       state (*this, nullptr, "FabCutieState", fabcutie::params::createLayout())
 {
     outputGainDb = state.getRawParameterValue (fabcutie::params::id::outputGain);
@@ -29,6 +30,18 @@ void FabCutieAudioProcessor::pushBandSettings() noexcept
     }
 }
 
+void FabCutieAudioProcessor::pushSoloSettings() noexcept
+{
+    // Only an enabled band can be soloed, and bypass switches solo off too.
+    const auto band = editorLink.soloBand.load();
+    fabcutie::dsp::BandSettings settings;
+
+    if (band >= 0 && band < fabcutie::dsp::maxBands && bypass->load() < 0.5f)
+        settings = bandParams[(size_t) band].read();
+
+    solo.setBand (settings);
+}
+
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     const juce::dsp::ProcessSpec spec { sampleRate,
@@ -37,6 +50,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushBandSettings();
     eq.prepare (sampleRate);
+
+    pushSoloSettings();
+    solo.prepare (sampleRate);
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
     outputStage.prepare (spec);
@@ -49,7 +65,20 @@ bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts)
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
 
-    return out == layouts.getMainInputChannelSet();
+    if (out != layouts.getMainInputChannelSet())
+        return false;
+
+    // The sidechain (used by the analyzer for now) may be off, mono or stereo.
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto& sidechain = layouts.getChannelSet (true, 1);
+
+        if (! sidechain.isDisabled() && sidechain != juce::AudioChannelSet::mono()
+            && sidechain != juce::AudioChannelSet::stereo())
+            return false;
+    }
+
+    return true;
 }
 
 void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -59,11 +88,42 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     for (auto ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, buffer.getNumSamples());
 
+    // The main bus is processed in place; the sidechain only feeds the analyzer.
+    auto main = getBusBuffer (buffer, false, 0);
+    const auto numChannels = main.getNumChannels();
+    const auto numSamples = main.getNumSamples();
+
+    auto* sidechainBus = getBus (true, 1);
+    const auto hasSidechain = sidechainBus != nullptr && sidechainBus->isEnabled()
+                           && sidechainBus->getNumberOfChannels() > 0;
+    editorLink.sidechainConnected.store (hasSidechain, std::memory_order_relaxed);
+
+    const auto analyze = editorLink.analyzerActive.load (std::memory_order_relaxed);
+
+    if (analyze)
+    {
+        editorLink.pre.push (main.getArrayOfReadPointers(), numChannels, numSamples);
+
+        if (hasSidechain)
+        {
+            const auto sidechain = getBusBuffer (buffer, true, 1);
+            editorLink.external.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
+        }
+    }
+
     pushBandSettings();
-    eq.process (buffer);
+    eq.process (main);
 
     outputStage.setGainDecibels (outputGainDb->load(), bypass->load() >= 0.5f);
-    outputStage.process (buffer);
+    outputStage.process (main);
+
+    pushSoloSettings();
+    solo.process (main, numChannels);
+
+    editorLink.outputMeter.process (main, numChannels);
+
+    if (analyze)
+        editorLink.post.push (main.getArrayOfReadPointers(), numChannels, numSamples);
 }
 
 juce::AudioProcessorEditor* FabCutieAudioProcessor::createEditor()
