@@ -14,12 +14,14 @@ namespace fabcutie::params
     inline constexpr int version = 1;      // output gain, bypass
     inline constexpr int bandsVersion = 2; // per-band EQ parameters
     inline constexpr int characterVersion = 3; // character mode
+    inline constexpr int pianoRollVersion = 4; // piano roll display
 
     namespace id
     {
         inline constexpr auto outputGain = "outputGain";
         inline constexpr auto bypass     = "bypass";
         inline constexpr auto character  = "character";
+        inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
     }
 
     namespace range

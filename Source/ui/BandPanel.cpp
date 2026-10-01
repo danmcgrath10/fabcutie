@@ -99,9 +99,10 @@ namespace fabcutie::ui
         if (band < 0)
             return;
 
-        const auto type = model.getBand (band).type;
-        gain.slider.setEnabled (EqModel::usesGain (type));
-        slopeBox.setEnabled (EqModel::usesSlope (type));
+        const auto settings = model.getBand (band);
+        gain.slider.setEnabled (EqModel::usesGain (settings.type));
+        q.slider.setEnabled (EqModel::usesQ (settings));
+        slopeBox.setEnabled (EqModel::usesSlope (settings.type));
     }
 
     void BandPanel::paint (juce::Graphics& g)

@@ -1,6 +1,7 @@
 #include "EqGraph.h"
 #include "Theme.h"
 #include "dsp/FilterDesign.h"
+#include "dsp/Notes.h"
 
 namespace fabcutie::ui
 {
@@ -124,6 +125,12 @@ namespace fabcutie::ui
         const auto latest = model.getAllBands();
         auto sampleRate = sampleRateSource ? sampleRateSource() : 0.0;
         if (sampleRate <= 0.0) sampleRate = 48000.0;
+
+        if (model.isPianoRollOn() != pianoRollShown)
+        {
+            pianoRollShown = ! pianoRollShown;
+            repaint();
+        }
 
         bool changed = force || ! curvesValid || ! juce::exactlyEqual (sampleRate, curveSampleRate);
 
@@ -438,7 +445,7 @@ namespace fabcutie::ui
                 {
                     const auto step = delta > 0.0f ? 1 : -1;
                     model.set (b, BandParam::slope,
-                               (float) juce::jlimit (0, (int) dsp::cutSlopesDbPerOct.size() - 1, s.slopeIndex + step));
+                               (float) juce::jlimit (0, dsp::numSlopes - 1, s.slopeIndex + step));
                 }
             }
             else
@@ -506,8 +513,7 @@ namespace fabcutie::ui
 
         for (const auto& start : dragStarts)
         {
-            model.set (start.band, BandParam::frequency,
-                       juce::jlimit (params::range::freqMinHz, params::range::freqMaxHz, start.frequency * ratio));
+            model.set (start.band, BandParam::frequency, snapFrequency (start.frequency * ratio));
 
             if (start.dragsGain)
                 model.set (start.band, BandParam::gain, juce::jlimit (-maxGainDb, maxGainDb, start.gainDb + dbDelta));
@@ -546,7 +552,7 @@ namespace fabcutie::ui
         if (band < 0)
             return;
 
-        const auto hz = juce::jlimit (params::range::freqMinHz, params::range::freqMaxHz, geometry.frequencyForX (pos.x));
+        const auto hz = snapFrequency (geometry.frequencyForX (pos.x));
         const auto db = juce::jlimit (-maxGainDb, maxGainDb, geometry.dbForY (pos.y));
 
         // Below and above the audible range a cut is almost always what is wanted.
@@ -620,6 +626,7 @@ namespace fabcutie::ui
             ranges.addItem (10 + (int) i, juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String ((int) rangeChoices[i]) + " dB",
                             true, juce::exactlyEqual (rangeChoices[i], geometry.rangeDb));
         menu.addSubMenu ("Display range", ranges);
+        menu.addItem (3, "Piano roll (snap to notes)", true, model.isPianoRollOn());
 
         bool anyEnabled = false;
         for (const auto& s : bands)
@@ -639,6 +646,11 @@ namespace fabcutie::ui
                                 if (result == 1)
                                 {
                                     safeThis->addBandAt (pos);
+                                }
+                                else if (result == 3)
+                                {
+                                    safeThis->model.setPianoRoll (! safeThis->model.isPianoRollOn());
+                                    safeThis->refresh (false);
                                 }
                                 else if (result == 2)
                                 {
@@ -667,6 +679,9 @@ namespace fabcutie::ui
 
     void EqGraph::paintOverChildren (juce::Graphics& g)
     {
+        if (pianoRollShown)
+            drawPianoRoll (g);
+
         {
             juce::Graphics::ScopedSaveState clip (g);
             g.reduceClipRegion (getLocalBounds().withTrimmedBottom (22));
@@ -884,7 +899,11 @@ namespace fabcutie::ui
         else if (EqModel::usesSlope (s.type))
             text << "   " << model.parameter (band, BandParam::slope).getCurrentValueAsText();
 
-        text << "   Q " << model.parameter (band, BandParam::q).getCurrentValueAsText();
+        if (EqModel::usesQ (s))
+            text << "   Q " << model.parameter (band, BandParam::q).getCurrentValueAsText();
+
+        if (pianoRollShown)
+            text << "   " << dsp::noteName ((int) std::round (dsp::noteForFrequency (s.frequency)));
 
         const juce::Font font (juce::FontOptions (12.0f));
         const auto width = (float) juce::GlyphArrangement::getStringWidthInt (font, text) + 16.0f;
@@ -902,6 +921,58 @@ namespace fabcutie::ui
         g.setColour (colours::text);
         g.setFont (font);
         g.drawText (text, box, juce::Justification::centred);
+    }
+
+    float EqGraph::snapFrequency (float hz) const
+    {
+        if (model.isPianoRollOn())
+            hz = (float) dsp::snapToNote (hz);
+
+        return juce::jlimit (params::range::freqMinHz, params::range::freqMaxHz, hz);
+    }
+
+    void EqGraph::drawPianoRoll (juce::Graphics& g)
+    {
+        constexpr float keyHeight = 12.0f;
+
+        const auto keys = juce::Rectangle<float> (plot.getX(), plot.getBottom() - keyHeight, plot.getWidth(), keyHeight);
+        const auto lowest  = (int) std::floor (dsp::noteForFrequency (geometry.minHz));
+        const auto highest = (int) std::ceil (dsp::noteForFrequency (geometry.maxHz));
+
+        g.setFont (juce::FontOptions (9.0f));
+
+        for (int note = lowest; note <= highest; ++note)
+        {
+            const auto left  = geometry.xForFrequency ((float) dsp::frequencyForNote (note - 0.5));
+            const auto right = geometry.xForFrequency ((float) dsp::frequencyForNote (note + 0.5));
+            const auto black = dsp::isBlackKey (note);
+
+            // Faint lanes for the black keys, like a piano roll.
+            if (black)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.12f));
+                g.fillRect (juce::Rectangle<float>::leftTopRightBottom (left, plot.getY(), right, keys.getY()));
+            }
+
+            // White keys fill the strip; black keys sit on top, and a line
+            // marks the two places where white keys meet (B-C and E-F).
+            g.setColour (juce::Colour (0xffb8bcc6));
+            g.fillRect (juce::Rectangle<float>::leftTopRightBottom (left, keys.getY(), right, keys.getBottom()));
+
+            g.setColour (juce::Colour (0xff15171c));
+            if (black)
+                g.fillRect (juce::Rectangle<float>::leftTopRightBottom (left, keys.getY(), right, keys.getY() + keyHeight * 0.6f));
+            else if (! dsp::isBlackKey (note - 1))
+                g.drawVerticalLine (juce::roundToInt (left), keys.getY(), keys.getBottom());
+
+            if (note % 12 == 0)
+            {
+                g.setColour (colours::gridText);
+                g.drawVerticalLine (juce::roundToInt (left), plot.getY(), keys.getY());
+                g.drawText (dsp::noteName (note), juce::Rectangle<float> (left + 2.0f, keys.getY() - 12.0f, 30.0f, 11.0f),
+                            juce::Justification::centredLeft);
+            }
+        }
     }
 
     void EqGraph::drawRangeButton (juce::Graphics& g)

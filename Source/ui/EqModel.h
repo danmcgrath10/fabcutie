@@ -37,15 +37,27 @@ namespace fabcutie::ui
         void addBand (int band, dsp::FilterType type, float frequency, float gainDb);
         void removeBand (int band);
 
+        // Piano roll display: show notes on the graph and snap band
+        // frequencies to them while dragging.
+        bool isPianoRollOn() const noexcept { return pianoRoll->load() >= 0.5f; }
+        void setPianoRoll (bool on);
+
         static bool usesGain (dsp::FilterType t) noexcept
         {
             return t == dsp::FilterType::bell || t == dsp::FilterType::lowShelf
-                || t == dsp::FilterType::highShelf || t == dsp::FilterType::tiltShelf;
+                || t == dsp::FilterType::highShelf || t == dsp::FilterType::tiltShelf
+                || t == dsp::FilterType::flatTilt;
         }
 
         static bool usesSlope (dsp::FilterType t) noexcept
         {
             return t == dsp::FilterType::lowCut || t == dsp::FilterType::highCut;
+        }
+
+        // Flat tilts and brickwall cuts have no Q.
+        static bool usesQ (const dsp::BandSettings& s) noexcept
+        {
+            return s.type != dsp::FilterType::flatTilt && ! (usesSlope (s.type) && dsp::isBrickwall (s.slopeIndex));
         }
 
     private:
@@ -55,5 +67,6 @@ namespace fabcutie::ui
         std::array<params::BandParameterRefs, dsp::maxBands> reads;
         std::array<std::array<juce::RangedAudioParameter*, numBandParams>, dsp::maxBands> writes {};
         std::array<std::array<int, numBandParams>, dsp::maxBands> gestureDepth {};
+        std::atomic<float>* pianoRoll = nullptr;
     };
 }
