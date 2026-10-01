@@ -131,12 +131,14 @@ namespace fabcutie::ui
         if (band < 0)
             return;
 
-        const auto type = model.getBand (band).type;
+        const auto settings = model.getBand (band);
+        const auto type = settings.type;
         gain.slider.setEnabled (EqModel::usesGain (type));
+        q.slider.setEnabled (EqModel::usesQ (settings));
         slopeBox.setEnabled (EqModel::usesSlope (type));
 
         const auto canBeDynamic = EqModel::usesDynamics (type);
-        const auto dynamic = canBeDynamic && model.getBand (band).dynamics.enabled;
+        const auto dynamic = canBeDynamic && settings.dynamics.enabled;
         dynamicButton.setEnabled (canBeDynamic);
 
         auto changed = false;

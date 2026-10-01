@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "dsp/Character.h"
 #include "dsp/EqTypes.h"
 
 // Central place for every automatable parameter, so IDs stay stable across
@@ -12,12 +13,16 @@ namespace fabcutie::params
     // appeared in. Never reuse or rename an existing ID.
     inline constexpr int version = 1;      // output gain, bypass
     inline constexpr int bandsVersion = 2; // per-band EQ parameters
-    inline constexpr int dynamicsVersion = 3; // per-band dynamic EQ parameters
+    inline constexpr int characterVersion = 3; // character mode
+    inline constexpr int pianoRollVersion = 4; // piano roll display
+    inline constexpr int dynamicsVersion = 5; // per-band dynamic EQ parameters
 
     namespace id
     {
         inline constexpr auto outputGain = "outputGain";
         inline constexpr auto bypass     = "bypass";
+        inline constexpr auto character  = "character";
+        inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
     }
 
     namespace range
@@ -55,6 +60,7 @@ namespace fabcutie::params
     juce::StringArray filterTypeNames();
     juce::StringArray slopeNames();
     juce::StringArray placementNames();
+    juce::StringArray characterNames();
     juce::StringArray detectorSourceNames();
     juce::StringArray detectorFilterNames();
 

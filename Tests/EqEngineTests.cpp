@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "dsp/EqEngine.h"
+#include "dsp/Notes.h"
 #include "ui/GraphGeometry.h"
 
 using namespace fabcutie::dsp;
@@ -139,6 +140,11 @@ namespace
             band (FilterType::highCut, 2000, 0, 1, 5),
             band (FilterType::highCut, 2000, 0, 1, 8),
             band (FilterType::highCut, 12000, 0, 0.5f, 4),
+            band (FilterType::allPass, 1000, 0, 2),
+            band (FilterType::flatTilt, 1000, 12, 1),
+            band (FilterType::flatTilt, 300, -30, 1),
+            band (FilterType::lowCut, 200, 0, 1, brickwallSlopeIndex),
+            band (FilterType::highCut, 3000, 0, 1, brickwallSlopeIndex),
         };
 
         const double freqs[] { 40, 100, 250, 700, 1000, 1500, 2600, 4000, 9000, 15000 };
@@ -192,6 +198,76 @@ namespace
         }
 
         check (db (band (FilterType::highCut, 1000, 0, 1, 8), 2000) < -95.0, "96 dB/oct high cut is ~96 dB down an octave above");
+    }
+
+    void testFilterExtras()
+    {
+        auto db = [] (const BandSettings& s, double f) { return bandMagnitudeDb (s, f, sampleRate); };
+
+        // All pass: flat magnitude, -180 degrees of phase at its frequency.
+        for (auto q : { 0.1f, 1.0f, 10.0f })
+        {
+            const auto ap = band (FilterType::allPass, 1000, 0, q);
+            auto flat = true;
+            for (double f = 10; f < 24000; f *= 1.1)
+                flat = flat && std::abs (db (ap, f)) < 1.0e-9;
+            check (flat, "all pass is flat at Q " + std::to_string (q));
+
+            const auto h = designResponse (designBand (ap, sampleRate), 1000, sampleRate);
+            check (std::abs (std::abs (std::arg (h)) - 3.14159265358979) < 1.0e-6, "all pass turns the phase 180 degrees at its frequency");
+        }
+
+        // Flat tilt: a straight line through the pivot, gain / 10 dB per octave.
+        for (auto gain : { -30.0f, -12.0f, 3.0f, 12.0f, 30.0f })
+            for (auto pivot : { 100.0f, 1000.0f, 8000.0f })
+            {
+                const auto ft = band (FilterType::flatTilt, pivot, gain, 1);
+                const auto slope = gain / flatTiltOctaves;
+                auto worst = 0.0;
+
+                for (double f = 20; f <= 16000; f *= 1.05)
+                    worst = std::max (worst, std::abs (db (ft, f) - slope * std::log2 (f / pivot)));
+
+                check (std::abs (db (ft, pivot)) < 1.0e-6, "flat tilt is 0 dB at its pivot");
+                check (worst < 0.1, "flat tilt " + std::to_string (gain) + " dB at " + std::to_string (pivot)
+                                         + " Hz strays " + std::to_string (worst) + " dB from a straight line");
+            }
+
+        check (std::abs (db (band (FilterType::flatTilt, 1000, 12, 1), 20000) - db (band (FilterType::flatTilt, 1000, 12, 1), 20) - 12.0) < 0.1,
+               "flat tilt gain is the change across 20 Hz to 20 kHz");
+        check (std::abs (db (band (FilterType::flatTilt, 500, 0, 1), 5000)) < 1.0e-9, "flat tilt at 0 dB is flat");
+
+        // Brickwall: flat pass band, -3 dB at the cutoff, 100 dB down within half an octave.
+        for (auto fc : { 100.0, 1000.0, 10000.0 })
+        {
+            const auto hc = band (FilterType::highCut, (float) fc, 0, 1, brickwallSlopeIndex);
+            const auto lc = band (FilterType::lowCut, (float) fc, 0, 1, brickwallSlopeIndex);
+            const auto name = "brickwall at " + std::to_string (fc) + " Hz";
+
+            check (std::abs (db (hc, fc) + 3.01) < 0.05 && std::abs (db (lc, fc) + 3.01) < 0.05, name + " is -3 dB at the cutoff");
+            check (db (hc, fc * 1.4) < -99.0 && db (lc, fc / 1.4) < -99.0, name + " is 100 dB down half an octave out");
+            check (std::abs (db (hc, fc / 10)) < 0.01 && std::abs (db (lc, std::min (fc * 10, 20000.0))) < 0.01,
+                   name + " is flat in the pass band");
+
+            auto noBoost = true;
+            for (double f = 10; f < 24000; f *= 1.02)
+                noBoost = noBoost && db (hc, f) < 1.0e-6 && db (lc, f) < 1.0e-6;
+            check (noBoost, name + " never rises above 0 dB");
+        }
+
+        // Out-of-range slope values clamp to the brickwall instead of misbehaving.
+        check (std::abs (db (band (FilterType::highCut, 1000, 0, 1, 99), 1000) + 3.01) < 0.05, "slope index clamps");
+    }
+
+    void testNotes()
+    {
+        check (std::abs (frequencyForNote (69) - 440.0) < 1.0e-9, "A4 is 440 Hz");
+        check (std::abs (noteForFrequency (261.6255653) - 60.0) < 1.0e-6, "middle C is note 60");
+        check (std::abs (snapToNote (452.0) - 440.0) < 1.0e-9, "452 Hz snaps to A4");
+        check (std::abs (snapToNote (455.0) - 466.1637615) < 1.0e-6, "455 Hz snaps to A#4");
+        check (std::abs (snapToNote (30.0) - 30.86770633) < 1.0e-6, "30 Hz snaps to B0");
+        check (noteName (60) == "C4" && noteName (61) == "C#4" && noteName (21) == "A0" && noteName (0) == "C-1", "note names");
+        check (isBlackKey (61) && ! isBlackKey (60) && ! isBlackKey (64) && isBlackKey (70), "black keys");
     }
 
     void testPlacement()
@@ -304,7 +380,7 @@ namespace
                 s.frequency = 10.0f * std::pow (3000.0f, uni (rng));
                 s.gainDb = -30.0f + 60.0f * uni (rng) * 0.4f; // keep summed boosts sane
                 s.q = 0.025f * std::pow (1600.0f, uni (rng));
-                s.slopeIndex = (int) (uni (rng) * 8.999f);
+                s.slopeIndex = (int) (uni (rng) * (numSlopes - 0.001f));
                 s.placement = (Placement) (int) (uni (rng) * numPlacements * 0.999f);
                 eq.setBand (b, s);
             }
@@ -382,6 +458,8 @@ int main()
     testPassThrough();
     testShapes();
     testResponseMatchesAnalytic();
+    testFilterExtras();
+    testNotes();
     testPlacement();
     testMono();
     testSmoothSwitching();

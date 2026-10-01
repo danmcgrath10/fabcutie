@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "Parameters.h"
+#include "dsp/Character.h"
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
 #include "ui/EqModel.h"
@@ -49,14 +50,17 @@ private:
 
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* bypass = nullptr;
+    std::atomic<float>* character = nullptr;
     std::array<fabcutie::params::BandParameterRefs, fabcutie::dsp::maxBands> bandParams;
 
     fabcutie::dsp::EqEngine eq;
+    fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
 
     fabcutie::ui::EqModel::DynamicGains dynamicGains {};
 
     void pushBandSettings() noexcept;
+    void pushCharacterMode() noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FabCutieAudioProcessor)
 };
