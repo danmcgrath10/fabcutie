@@ -35,6 +35,8 @@ private:
     void updateBandPanel();
     void updateMatchPanel();
     void applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings&);
+    void updatePhaseBox();
+    void choosePhase (int itemId);
 
     fabcutie::ui::LookAndFeel lookAndFeel;
     juce::AudioProcessorValueTreeState& state;
@@ -52,10 +54,14 @@ private:
     juce::TextButton bypassButton { "Bypass" };
     juce::ComboBox characterBox;
     juce::TextButton sketchButton { "Sketch" }, matchButton { "Match" };
+    juce::ComboBox phaseBox; // phase mode and, for linear phase, its resolution
 
     std::unique_ptr<SliderAttachment> outputGainAttachment;
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     std::unique_ptr<ComboBoxAttachment> characterAttachment;
+    std::unique_ptr<juce::ParameterAttachment> phaseModeAttachment, resolutionAttachment;
+
+    bool compactHeader = false; // narrow windows drop the combo box labels
 
     juce::TooltipWindow tooltips { this, 700 };
 

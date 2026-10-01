@@ -29,4 +29,7 @@ Audio-thread code lives here, independent of the UI.
 - `PeakMeter.h`: per-channel peak capture for the output meter.
 - `BandSolo.h`: intelligent solo, auditions the region a band works on.
 - `EditorLink.h`: the taps, meter, sidechain flag and solo band shared with the editor.
-- Planned: linear-phase mode.
+- `PhaseModes.h`: Natural and Linear Phase. Designs one FIR kernel for all static bands from the
+  analog prototypes (a 2 x 2 matrix of kernels when mid/side bands mix left and right), runs it with
+  uniformly partitioned FFT convolution, designs new kernels on a background thread (inline when
+  rendering offline) and crossfades them in, and delays the sidechain to match the latency.

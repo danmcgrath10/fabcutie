@@ -2,6 +2,7 @@
 #include "Theme.h"
 #include "dsp/CurveFit.h"
 #include "dsp/FilterDesign.h"
+#include "dsp/PhaseModes.h"
 #include "dsp/Notes.h"
 
 namespace fabcutie::ui
@@ -231,12 +232,14 @@ namespace fabcutie::ui
                 continue;
             }
 
-            const auto design = dsp::designBand (s, curveSampleRate);
+            const auto analog = ! dsp::runsAsIir (s, phaseMode);
+            const auto design = analog ? dsp::designAnalogBand (s, curveSampleRate) : dsp::designBand (s, curveSampleRate);
             curve.resize ((size_t) numPoints);
 
             for (size_t i = 0; i < (size_t) numPoints; ++i)
             {
-                const auto mag = std::abs (dsp::designResponse (design, pointHz[i], curveSampleRate));
+                const auto mag = std::abs (analog ? dsp::analogBandResponse (design, pointHz[i], curveSampleRate)
+                                                  : dsp::designResponse (design, pointHz[i], curveSampleRate));
                 curve[i] = (float) (20.0 * std::log10 (std::max (mag, 1.0e-12)));
             }
 

@@ -90,6 +90,18 @@ namespace fabcutie::params
         return { "Clean", "Gentle", "Warm" };
     }
 
+    juce::StringArray phaseModeNames()
+    {
+        return { "Zero Latency", "Natural Phase", "Linear Phase" };
+    }
+
+    juce::StringArray linearResolutionNames()
+    {
+        juce::StringArray names { "Low", "Medium", "High", "Very High", "Maximum" };
+        jassert (names.size() == dsp::numLinearResolutions);
+        return names;
+    }
+
     juce::StringArray detectorSourceNames()
     {
         return { "Internal", "External" };
@@ -131,6 +143,21 @@ namespace fabcutie::params
             "Piano Roll",
             false,
             juce::AudioParameterBoolAttributes().withAutomatable (false)));
+
+        // Not automatable: both change the latency the host compensates for.
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::phaseMode, phaseVersion },
+            "Phase Mode",
+            phaseModeNames(),
+            (int) dsp::PhaseMode::zeroLatency,
+            juce::AudioParameterChoiceAttributes().withAutomatable (false)));
+
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { id::linearResolution, phaseVersion },
+            "Linear Phase Resolution",
+            linearResolutionNames(),
+            dsp::defaultLinearResolution,
+            juce::AudioParameterChoiceAttributes().withAutomatable (false)));
 
         const auto frequencyAttributes = juce::AudioParameterFloatAttributes()
                                              .withLabel ("Hz")

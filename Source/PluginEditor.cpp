@@ -12,6 +12,12 @@ namespace
     const juce::Identifier editorWidthId  { "editorWidth" };
     const juce::Identifier editorHeightId { "editorHeight" };
     const juce::Identifier rangeDbId      { "displayRangeDb" };
+
+    // Phase menu item IDs: the two minimum/analog-phase modes, then one per
+    // linear phase resolution.
+    constexpr int zeroLatencyItem = 1;
+    constexpr int naturalItem = 2;
+    constexpr int firstLinearItem = 10;
 }
 
 FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcessor& p)
@@ -75,6 +81,22 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     characterBox.setTooltip ("Character: Clean, or Gentle / Warm analog-style saturation (oversampled)");
     addAndMakeVisible (characterBox);
 
+    phaseBox.addItem ("Zero Latency", zeroLatencyItem);
+    phaseBox.addItem ("Natural Phase", naturalItem);
+    phaseBox.addSectionHeading ("Linear Phase");
+
+    const auto resolutions = params::linearResolutionNames();
+
+    for (int r = 0; r < resolutions.size(); ++r)
+        phaseBox.addItem ("Linear (" + resolutions[r] + ")", firstLinearItem + r);
+
+    phaseBox.onChange = [this] { choosePhase (phaseBox.getSelectedId()); };
+    addAndMakeVisible (phaseBox);
+
+    phaseModeAttachment = std::make_unique<juce::ParameterAttachment> (*state.getParameter (params::id::phaseMode), [this] (float) { updatePhaseBox(); });
+    resolutionAttachment = std::make_unique<juce::ParameterAttachment> (*state.getParameter (params::id::linearResolution), [this] (float) { updatePhaseBox(); });
+    updatePhaseBox();
+
     outputGainAttachment = std::make_unique<SliderAttachment> (state, params::id::outputGain, outputGain);
     bypassAttachment     = std::make_unique<ButtonAttachment> (state, params::id::bypass, bypassButton);
     characterAttachment  = std::make_unique<ComboBoxAttachment> (state, params::id::character, characterBox);
@@ -83,7 +105,7 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     setLookAndFeel (&lookAndFeel);
 
     setResizable (true, true);
-    setResizeLimits (640, 380, 2400, 1500);
+    setResizeLimits (800, 380, 2400, 1500);
     setSize ((int) state.state.getProperty (editorWidthId, 960),
              (int) state.state.getProperty (editorHeightId, 580));
 }
@@ -102,6 +124,47 @@ void FabCutieAudioProcessorEditor::applyAnalyzerSettings (const fabcutie::ui::An
     s.save (state.state);
     analyzerBar.setSettings (s);
     spectrum.setSettings (s);
+}
+
+void FabCutieAudioProcessorEditor::updatePhaseBox()
+{
+    using namespace fabcutie;
+
+    const auto mode = (dsp::PhaseMode) juce::jlimit (0, dsp::numPhaseModes - 1,
+                                                     juce::roundToInt (state.getRawParameterValue (params::id::phaseMode)->load()));
+    const auto resolution = juce::jlimit (0, dsp::numLinearResolutions - 1,
+                                          juce::roundToInt (state.getRawParameterValue (params::id::linearResolution)->load()));
+
+    const auto item = mode == dsp::PhaseMode::zeroLatency ? zeroLatencyItem
+                    : mode == dsp::PhaseMode::natural     ? naturalItem
+                                                          : firstLinearItem + resolution;
+    phaseBox.setSelectedId (item, juce::dontSendNotification);
+    graph.setPhaseMode (mode);
+
+    const auto sampleRate = getAudioProcessor()->getSampleRate() > 0.0 ? getAudioProcessor()->getSampleRate() : 48000.0;
+    const auto latencyMs = 1000.0 * dsp::PhaseStage::latencyFor (mode, resolution, sampleRate) / sampleRate;
+
+    phaseBox.setTooltip ("Phase: Zero Latency (minimum phase), Natural Phase (matches analog filters up to Nyquist) "
+                         "or Linear Phase (no phase shift; higher resolution is more accurate in the lows but adds latency). "
+                         "Current latency: " + juce::String (latencyMs, 1) + " ms");
+}
+
+void FabCutieAudioProcessorEditor::choosePhase (int itemId)
+{
+    using namespace fabcutie;
+
+    if (itemId <= 0)
+        return;
+
+    const auto mode = itemId == zeroLatencyItem ? dsp::PhaseMode::zeroLatency
+                    : itemId == naturalItem     ? dsp::PhaseMode::natural
+                                                : dsp::PhaseMode::linear;
+
+    if (mode == dsp::PhaseMode::linear)
+        resolutionAttachment->setValueAsCompleteGesture ((float) (itemId - firstLinearItem));
+
+    phaseModeAttachment->setValueAsCompleteGesture ((float) mode);
+    updatePhaseBox();
 }
 
 void FabCutieAudioProcessorEditor::updateBandPanel()
@@ -153,7 +216,12 @@ void FabCutieAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (colours::textDim);
     g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
     g.drawText ("OUTPUT", outputGain.getBounds().translated (-58, 0), juce::Justification::centredLeft);
-    g.drawText ("CHARACTER", characterBox.getBounds().translated (-76, 0).withWidth (72), juce::Justification::centredLeft);
+
+    if (! compactHeader)
+    {
+        g.drawText ("CHARACTER", characterBox.getBounds().translated (-76, 0).withWidth (72), juce::Justification::centredLeft);
+        g.drawText ("PHASE", phaseBox.getBounds().translated (-48, 0).withWidth (44), juce::Justification::centredLeft);
+    }
 }
 
 void FabCutieAudioProcessorEditor::resized()
@@ -166,6 +234,12 @@ void FabCutieAudioProcessorEditor::resized()
     outputGain.setBounds (header.removeFromRight (100));
     header.removeFromRight (66); // "OUTPUT" label
     characterBox.setBounds (header.removeFromRight (92).withSizeKeepingCentre (92, 24));
+
+    // Below this width the labels would run into the Sketch and Match
+    // buttons; the boxes' tooltips still say what they are.
+    compactHeader = getWidth() < 940;
+    header.removeFromRight (compactHeader ? 8 : 84); // "CHARACTER" label
+    phaseBox.setBounds (header.removeFromRight (compactHeader ? 116 : 128).withSizeKeepingCentre (compactHeader ? 116 : 128, 24));
 
     header.removeFromLeft (150); // title and version
     sketchButton.setBounds (header.removeFromLeft (64).withSizeKeepingCentre (64, 24));

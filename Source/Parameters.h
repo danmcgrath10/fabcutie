@@ -4,6 +4,7 @@
 
 #include "dsp/Character.h"
 #include "dsp/EqTypes.h"
+#include "dsp/PhaseModes.h"
 
 // Central place for every automatable parameter, so IDs stay stable across
 // versions and sessions saved in Logic keep loading.
@@ -16,6 +17,7 @@ namespace fabcutie::params
     inline constexpr int characterVersion = 3; // character mode
     inline constexpr int pianoRollVersion = 4; // piano roll display
     inline constexpr int dynamicsVersion = 5; // per-band dynamic EQ parameters
+    inline constexpr int phaseVersion = 6; // phase mode and linear phase resolution
     inline constexpr int spectralVersion = 7; // per-band spectral dynamics switch
 
     namespace id
@@ -24,6 +26,8 @@ namespace fabcutie::params
         inline constexpr auto bypass     = "bypass";
         inline constexpr auto character  = "character";
         inline constexpr auto pianoRoll  = "pianoRoll"; // display option: show notes, snap band frequencies to them
+        inline constexpr auto phaseMode  = "phaseMode";
+        inline constexpr auto linearResolution = "linearResolution"; // kernel length (and latency) in linear phase
     }
 
     namespace range
@@ -63,6 +67,8 @@ namespace fabcutie::params
     juce::StringArray slopeNames();
     juce::StringArray placementNames();
     juce::StringArray characterNames();
+    juce::StringArray phaseModeNames();
+    juce::StringArray linearResolutionNames();
     juce::StringArray detectorSourceNames();
     juce::StringArray detectorFilterNames();
 
