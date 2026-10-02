@@ -21,7 +21,7 @@ jobs:
     name: macOS (AU, VST3, Standalone)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version
         shell: bash
@@ -104,12 +104,12 @@ jobs:
           ditto -c -k --keepParent CLAP/FabCutie.clap "$GITHUB_WORKSPACE/FabCutie-macOS-CLAP.zip"
           ditto -c -k --keepParent Standalone/FabCutie.app "$GITHUB_WORKSPACE/FabCutie-macOS-Standalone.zip"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FabCutie-macOS
           path: FabCutie-macOS-*.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FabCutie-macOS-Installer
           path: dist/FabCutie-*-macOS.pkg
@@ -118,7 +118,7 @@ jobs:
     name: Windows (VST3, Standalone)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Version
         shell: bash
@@ -169,12 +169,12 @@ jobs:
             if (-not (Test-Path $f)) { Write-Error "missing $f"; exit 1 }
           }
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FabCutie-Windows-Installer
           path: dist/FabCutie-*-Windows-Setup.exe
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: FabCutie-Windows
           path: |
@@ -195,9 +195,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: FabCutie-*-Installer
           merge-multiple: true
