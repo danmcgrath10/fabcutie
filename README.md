@@ -18,6 +18,7 @@ FabCutie is an original project inspired by the workflow of modern "draw-on-the-
   - [The graph](#the-graph)
   - [Dynamic and spectral bands](#dynamic-and-spectral-bands)
   - [EQ Sketch and EQ Match](#eq-sketch-and-eq-match)
+  - [Assist: resonances and unmasking](#assist-resonances-and-unmasking)
   - [Analyzer](#analyzer)
   - [Phase modes](#phase-modes)
   - [Workflow](#workflow)
@@ -61,6 +62,8 @@ If SmartScreen warns about an unknown publisher, click **More info → Run anywa
 - Spectral dynamics that work bin by bin inside a band, to tame one resonance rather than the whole region.
 - EQ Sketch: draw a curve and get the bands that make it.
 - EQ Match: move your track's tonal balance towards a reference.
+- Resonance finder: listens to your track and adds narrow dynamic cuts on the peaks that ring out.
+- Auto-unmasking: pick another FabCutie as the key (say, the kick on the bass) and it finds where the two collide and ducks this track there only while the key plays. No sidechain routing needed.
 
 **Sound**
 - Zero Latency, Natural Phase and Linear Phase modes.
@@ -110,6 +113,15 @@ Switch on **SPEC** as well and the band works bin by bin, so only the frequencie
 
 - **Sketch:** press **Sketch** in the header and draw the curve you want. On release it becomes up to 8 bells and shelves in the free band slots. Esc leaves sketch mode.
 - **Match:** press **Match** and pick a reference, either the **Sidechain** input or a **Captured** one (play the reference and press **Capture**). Play your track with **Learn** on, then **Apply** to add up to 12 bands that move its tonal balance towards the reference. Level differences are ignored, **Amount** scales the result, and the captured reference is saved with the session.
+
+### Assist: resonances and unmasking
+
+Press **Assist** in the header. Both tools listen while **Learn** is on, show what they found, and add dynamic bell bands in the free slots when you press **Apply**. The bands are ordinary dynamic bands, so you can tweak or remove any of them afterwards.
+
+- **Resonances:** play the track with **Learn** on. Assist marks the narrow peaks that stand out of the spectrum around them (from 150 Hz up, since lower peaks are mostly the notes being played) and **Apply** adds a narrow dynamic cut on each, starting at the peak's usual level, cutting up to as far as the peak stands out (12 dB at most). **Sensitivity** sets how far a peak must stand out.
+- **Unmask:** pick the **Key**, the track that should cut through this one. It can be any other FabCutie in the session (its output is sent across inside the host, so there's nothing to route) or the host's sidechain. Play both with **Learn** on: Assist finds where the two are both strong and **Apply** adds broad dynamic bands there that listen to the key and duck this track by **Depth** while the key plays. The key also feeds the analyzer's Sidechain trace and its collision display.
+
+A key instance takes the place of the host's sidechain for every External band in this instance, and is saved with the session. Instances follow each other within about a block of audio, which suits a detector with attack and release times; the key only reaches instances in the same host process, and offline bounces depend on the host rendering both tracks together.
 
 ### Analyzer
 

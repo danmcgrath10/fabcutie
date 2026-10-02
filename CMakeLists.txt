@@ -85,7 +85,8 @@ target_sources(FabCutie PRIVATE
     Source/workflow/History.cpp
     Source/workflow/Presets.cpp
     Source/ui/InstanceList.cpp
-    Source/ui/MatchPanel.cpp)
+    Source/ui/MatchPanel.cpp
+    Source/ui/AssistPanel.cpp)
 
 target_include_directories(FabCutie PRIVATE Source)
 
@@ -217,4 +218,17 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME PhaseModeTests COMMAND FabCutiePhaseTests)
+
+    juce_add_console_app(FabCutieAssistTests PRODUCT_NAME "FabCutieAssistTests")
+    target_sources(FabCutieAssistTests PRIVATE Tests/AssistTests.cpp)
+    target_include_directories(FabCutieAssistTests PRIVATE Source)
+    target_compile_definitions(FabCutieAssistTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieAssistTests
+        PRIVATE
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME AssistTests COMMAND FabCutieAssistTests)
 endif()

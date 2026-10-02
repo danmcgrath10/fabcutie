@@ -99,6 +99,27 @@ namespace fabcutie::dsp
             return out;
         }
 
+        // Average level of everything between lowHz and highHz, in dB: the
+        // power of the bins added up, so a sine of amplitude A inside the
+        // range reads about 20 log10 A, like the analyzer.
+        double rangeLevelDb (double lowHz, double highHz, double sampleRate) const
+        {
+            if (frames == 0)
+                return -200.0;
+
+            const auto binHz = sampleRate / size;
+            const auto lastBin = (int) power.size() - 1;
+            const auto first = std::clamp ((int) std::ceil (lowHz / binHz), 1, lastBin);
+            const auto last = std::clamp ((int) std::floor (highHz / binHz), first, lastBin);
+
+            auto sum = 0.0;
+            for (auto k = first; k <= last; ++k)
+                sum += power[(size_t) k];
+
+            // The Hann window spreads a sine over 1.5 bins' worth of power.
+            return 10.0 * std::log10 (std::max (sum / (double) frames / 1.5, 1.0e-20));
+        }
+
     private:
         void analyse()
         {
