@@ -3,7 +3,7 @@
 
 namespace fabcutie::ui
 {
-    AnalyzerBar::AnalyzerBar (std::function<bool()> connected) : sidechainConnected (std::move (connected))
+    AnalyzerBar::AnalyzerBar (std::function<bool()> connected)
     {
         preButton.setTooltip ("Show the input spectrum, before the EQ");
         postButton.setTooltip ("Show the output spectrum, after the EQ");
@@ -22,6 +22,10 @@ namespace fabcutie::ui
         addAndMakeVisible (menuButton);
 
         syncButtons();
+
+        // Only from here on: the owner may still be under construction (the
+        // editor builds this bar before the members the callback reads).
+        sidechainConnected = std::move (connected);
         startTimerHz (4);
     }
 
