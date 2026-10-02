@@ -125,9 +125,18 @@ The phase menu in the bar under the graph (next to the character menu) picks how
 
 The plugin reports its latency to the host, so Logic Pro and other DAWs keep it in time with the other tracks. Changing mode fades the output out and back in. Dynamic bands (other than spectral ones) always run as zero-latency IIR filters after the FIR, since their gain moves faster than a kernel could be redesigned; everything else (all band types, slopes and stereo/left/right/mid/side placement) works in every mode. The phase mode isn't automatable, because it changes the latency.
 
-## Download a build
+## Download and install
 
-Every push builds on GitHub Actions. Open the latest run under **Actions → Build**, then download **FabCutie-macOS** (or **FabCutie-Windows**) from the run's Artifacts section.
+Get the installer from the [latest release](https://github.com/danmcgrath10/fabcutie/releases/latest) (no GitHub account needed):
+
+- **macOS:** `FabCutie-<version>-macOS.pkg`. Double-click it and pick the formats you want: Audio Unit (Logic Pro, GarageBand), VST3, CLAP and the standalone app. The plug-ins go into `/Library/Audio/Plug-Ins`, and any FabCutie you copied into your own Plug-Ins folder by hand is replaced so your DAW only sees one. Then quit and reopen Logic Pro.
+
+  The installer isn't signed with an Apple Developer ID, so the first time macOS says it can't check it for malware. Click **Done**, open **System Settings → Privacy & Security**, scroll down to the message about FabCutie and click **Open Anyway**. You only need to do this once per download.
+- **Windows:** `FabCutie-<version>-Windows-Setup.exe` installs the VST3 and CLAP into `C:\Program Files\Common Files` and the standalone app into `C:\Program Files\FabCutie`. If SmartScreen warns about an unknown publisher, click **More info → Run anyway**. Uninstall it from **Settings → Apps**.
+
+If FabCutie doesn't show up in Logic Pro, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
+
+Every push to `main` also builds on GitHub Actions: the run's Artifacts section has the same installers (**FabCutie-macOS-Installer**, **FabCutie-Windows-Installer**) and plain zips of each format. To publish a release, set the version in `CMakeLists.txt` and push a matching tag (`git tag v0.5.0 && git push origin v0.5.0`).
 
 ## Build from source (macOS)
 
@@ -153,7 +162,7 @@ Builds are universal (Apple Silicon and Intel). Outputs land in `build/FabCutie_
 
 For an Xcode project instead, use `cmake -S . -B build-xcode -G Xcode` and open `build-xcode/FabCutie.xcodeproj`.
 
-## Install in Logic Pro
+## Install a build from source in Logic Pro
 
 1. Copy the Audio Unit into your user Components folder:
 
@@ -164,14 +173,9 @@ For an Xcode project instead, use `cmake -S . -B build-xcode -G Xcode` and open 
 
    Or configure with `-DFABCUTIE_COPY_AFTER_BUILD=ON` and every build installs itself.
 
-2. If you downloaded the plugin from GitHub instead of building it, clear the quarantine flag and ad-hoc sign it so macOS will load it:
+   If you installed FabCutie with the installer before, delete `/Library/Audio/Plug-Ins/Components/FabCutie.component` first so Logic doesn't load that copy instead.
 
-   ```sh
-   xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/FabCutie.component
-   codesign --force --deep --sign - ~/Library/Audio/Plug-Ins/Components/FabCutie.component
-   ```
-
-3. Make macOS rescan Audio Units, then check it validates:
+2. Make macOS rescan Audio Units, then check it validates:
 
    ```sh
    killall -9 AudioComponentRegistrar 2>/dev/null || true
@@ -180,9 +184,9 @@ For an Xcode project instead, use `cmake -S . -B build-xcode -G Xcode` and open 
 
    The last line should read `AU VALIDATION SUCCEEDED`.
 
-4. Open Logic Pro. If FabCutie is missing, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
+3. Open Logic Pro. If FabCutie is missing, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
 
-## Install the VST3 or CLAP (other DAWs)
+## Install a VST3 or CLAP build from source (other DAWs)
 
 Copy `FabCutie.vst3` to `~/Library/Audio/Plug-Ins/VST3/` on macOS or `C:\Program Files\Common Files\VST3\` on Windows.
 
@@ -200,7 +204,8 @@ Source/
   dsp/                  audio-thread code: EQ engine, filter design, output stage
   ui/                   editor components (frequency graph, analyzer, meter)
 Tests/                  offline EQ engine tests (ctest)
-.github/workflows/      macOS + Windows CI, runs auval
+packaging/              macOS .pkg and Windows (Inno Setup) installers
+.github/workflows/      macOS + Windows CI: tests, installers, auval; releases on version tags
 ```
 
 ## License

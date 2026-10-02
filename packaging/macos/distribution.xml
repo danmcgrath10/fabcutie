@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>FabCutie @VERSION@</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="LICENSE.txt"/>
+    <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
+    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <os-version min="11.0"/>
+
+    <choices-outline>
+        <line choice="au"/>
+        <line choice="vst3"/>
+        <line choice="clap"/>
+        <line choice="app"/>
+    </choices-outline>
+
+    <choice id="au" title="Audio Unit (Logic Pro, GarageBand)" description="Installs FabCutie.component into /Library/Audio/Plug-Ins/Components.">
+        <pkg-ref id="io.github.danmcgrath10.fabcutie.au"/>
+    </choice>
+    <choice id="vst3" title="VST3" description="Installs FabCutie.vst3 into /Library/Audio/Plug-Ins/VST3.">
+        <pkg-ref id="io.github.danmcgrath10.fabcutie.vst3"/>
+    </choice>
+    <choice id="clap" title="CLAP" description="Installs FabCutie.clap into /Library/Audio/Plug-Ins/CLAP.">
+        <pkg-ref id="io.github.danmcgrath10.fabcutie.clap"/>
+    </choice>
+    <choice id="app" title="Standalone app" description="Installs FabCutie.app into /Applications.">
+        <pkg-ref id="io.github.danmcgrath10.fabcutie.app"/>
+    </choice>
+
+    <pkg-ref id="io.github.danmcgrath10.fabcutie.au">FabCutie-au.pkg</pkg-ref>
+    <pkg-ref id="io.github.danmcgrath10.fabcutie.vst3">FabCutie-vst3.pkg</pkg-ref>
+    <pkg-ref id="io.github.danmcgrath10.fabcutie.clap">FabCutie-clap.pkg</pkg-ref>
+    <pkg-ref id="io.github.danmcgrath10.fabcutie.app">FabCutie-app.pkg</pkg-ref>
+</installer-gui-script>
