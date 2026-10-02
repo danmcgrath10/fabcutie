@@ -44,6 +44,22 @@ jobs:
       - name: Test EQ engine
         run: ctest --test-dir build -C Release --output-on-failure
 
+      # Every slice of every binary must run on macOS 11, not just on the
+      # runner's own macOS version.
+      - name: Check minimum macOS version
+        run: |
+          cd build/FabCutie_artefacts/Release
+          status=0
+          for bin in AU/FabCutie.component/Contents/MacOS/FabCutie VST3/FabCutie.vst3/Contents/MacOS/FabCutie \
+                     CLAP/FabCutie.clap/Contents/MacOS/FabCutie Standalone/FabCutie.app/Contents/MacOS/FabCutie; do
+            for arch in arm64 x86_64; do
+              minos="$(vtool -arch "$arch" -show-build "$bin" | awk '/minos/ {print $2}')"
+              echo "$bin ($arch): minos $minos"
+              [ "$minos" = "11.0" ] || status=1
+            done
+          done
+          exit $status
+
       - name: Sign (ad-hoc)
         run: |
           cd build/FabCutie_artefacts/Release
