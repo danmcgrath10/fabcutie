@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "dsp/KeyBus.h"
+
 class FabCutieAudioProcessor;
 
 namespace fabcutie
@@ -74,6 +76,9 @@ namespace fabcutie
         // Any thread: something listeners show has changed (e.g. a name).
         void notifyChanged() { triggerAsyncUpdate(); }
 
+        // Every instance's output, for auto-unmasking (see KeyBus.h).
+        dsp::KeyBusPool& getKeyBuses() noexcept { return keyBuses; }
+
         void addListener (Listener* l)    { listeners.add (l); }
         void removeListener (Listener* l) { listeners.remove (l); }
 
@@ -87,6 +92,7 @@ namespace fabcutie
         juce::Array<FabCutieAudioProcessor*> instances;
         std::atomic<int> lastNumber { 0 };
         juce::ListenerList<Listener> listeners;
+        dsp::KeyBusPool keyBuses;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstanceRegistry)
     };

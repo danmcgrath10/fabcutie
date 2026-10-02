@@ -33,6 +33,7 @@ struct FabCutieAudioProcessorEditor::View
           spectrum (graph, link, [&p] { return p.getSampleRate(); }),
           meter (link.outputMeter),
           matchPanel (model, link, [&p] { return p.getSampleRate(); }),
+          assistPanel (model, link, keySource (p), [&p] { return p.getSampleRate(); }),
           workflowBar (p.getHistory(), p.getABCompare(), p.getPresets(), p.getMidiLearn()),
           outputBar (state, [&p] { return p.getAutoGainDb(); }),
           midiLearnMenu (p.getParameterSet(), p.getMidiLearn())
@@ -54,6 +55,27 @@ struct FabCutieAudioProcessorEditor::View
         graph.setBackgroundLayer (nullptr);
     }
 
+    // The other instances this one can take as its unmasking key.
+    static fabcutie::ui::AssistPanel::KeySource keySource (FabCutieAudioProcessor& p)
+    {
+        fabcutie::ui::AssistPanel::KeySource keys;
+
+        keys.choices = [&p]
+        {
+            std::vector<fabcutie::ui::AssistPanel::KeySource::Choice> choices;
+            juce::SharedResourcePointer<fabcutie::InstanceRegistry> registry;
+
+            for (auto* instance : registry->getInstances())
+                if (instance != &p)
+                    choices.push_back ({ instance->getInstanceId(), instance->getInstanceName() });
+
+            return choices;
+        };
+        keys.get = [&p] { return p.getKeyInstanceId(); };
+        keys.set = [&p] (std::uint64_t id) { p.setKeyInstanceId (id); };
+        return keys;
+    }
+
     FabCutieAudioProcessor& processor;
     juce::AudioProcessorValueTreeState& state;
     fabcutie::dsp::EditorLink& link;
@@ -64,6 +86,7 @@ struct FabCutieAudioProcessorEditor::View
     fabcutie::ui::SpectrumDisplay spectrum;
     fabcutie::ui::LevelMeter meter;
     fabcutie::ui::MatchPanel matchPanel;
+    fabcutie::ui::AssistPanel assistPanel;
     fabcutie::ui::WorkflowBar workflowBar;
     fabcutie::ui::OutputBar outputBar;
     fabcutie::ui::MidiLearnMenu midiLearnMenu;
@@ -93,8 +116,13 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
 
     matchButton.setClickingTogglesState (true);
     matchButton.setTooltip ("EQ Match: match the input's tonal balance to a reference");
-    matchButton.onClick = [this] { if (view != nullptr) view->matchPanel.setVisible (matchButton.getToggleState()); };
+    matchButton.onClick = [this] { showToolPanel (matchButton.getToggleState() ? &matchButton : nullptr); };
     addAndMakeVisible (matchButton);
+
+    assistButton.setClickingTogglesState (true);
+    assistButton.setTooltip ("Assist: find resonances to tame, or make room for another track (unmasking)");
+    assistButton.onClick = [this] { showToolPanel (assistButton.getToggleState() ? &assistButton : nullptr); };
+    addAndMakeVisible (assistButton);
 
     outputGain.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 64, 18);
     outputGain.setTooltip ("Output gain");
@@ -199,6 +227,7 @@ void FabCutieAudioProcessorEditor::setTarget (FabCutieAudioProcessor& target)
     addChildComponent (v.bandPanel);
     addAndMakeVisible (v.meter);
     addChildComponent (v.matchPanel);
+    addChildComponent (v.assistPanel);
     addAndMakeVisible (v.workflowBar);
     addAndMakeVisible (v.outputBar);
 
@@ -223,6 +252,7 @@ void FabCutieAudioProcessorEditor::setTarget (FabCutieAudioProcessor& target)
     // Sketch and Match start switched off on the newly edited instance.
     sketchButton.setToggleState (false, juce::dontSendNotification);
     matchButton.setToggleState (false, juce::dontSendNotification);
+    assistButton.setToggleState (false, juce::dontSendNotification);
     v.graph.onSketchModeChanged = [this] (bool on) { sketchButton.setToggleState (on, juce::dontSendNotification); };
 
     v.graph.onRangeChanged = [this] (float db) { view->state.state.setProperty (rangeDbId, db, nullptr); };
@@ -313,6 +343,22 @@ void FabCutieAudioProcessorEditor::instancesChanged()
 {
     refreshInstanceList();
     updateOverlays();
+
+    if (view != nullptr)
+        view->assistPanel.refreshKeys();
+}
+
+void FabCutieAudioProcessorEditor::showToolPanel (juce::TextButton* button)
+{
+    // Match and Assist share the graph's top right corner: one at a time.
+    matchButton.setToggleState (button == &matchButton, juce::dontSendNotification);
+    assistButton.setToggleState (button == &assistButton, juce::dontSendNotification);
+
+    if (view != nullptr)
+    {
+        view->matchPanel.setVisible (button == &matchButton);
+        view->assistPanel.setVisible (button == &assistButton);
+    }
 }
 
 void FabCutieAudioProcessorEditor::instanceRemoved (FabCutieAudioProcessor& instance)
@@ -449,6 +495,10 @@ void FabCutieAudioProcessorEditor::updateMatchPanel()
     const auto area = graph.getBounds().reduced (10, 0);
     const auto width = juce::jmin (fabcutie::ui::MatchPanel::preferredWidth, area.getWidth());
     matchPanel.setBounds (area.getRight() - width, area.getY() + 34, width, fabcutie::ui::MatchPanel::preferredHeight);
+
+    const auto assistWidth = juce::jmin (fabcutie::ui::AssistPanel::preferredWidth, area.getWidth());
+    view->assistPanel.setBounds (area.getRight() - assistWidth, area.getY() + 34, assistWidth,
+                                 juce::jmin (fabcutie::ui::AssistPanel::preferredHeight, area.getHeight() - 40));
 }
 
 bool FabCutieAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
@@ -533,6 +583,8 @@ void FabCutieAudioProcessorEditor::resized()
     outputGain.setBounds (header.removeFromRight (100));
     header.removeFromRight (compactHeader ? 16 : 66); // "OUTPUT" label
 
+    assistButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
+    header.removeFromRight (6);
     matchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));
     header.removeFromRight (6);
     sketchButton.setBounds (header.removeFromRight (60).withSizeKeepingCentre (60, 24));

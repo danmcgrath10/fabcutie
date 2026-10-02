@@ -26,6 +26,10 @@ Audio-thread code lives here, independent of the UI.
   after `EqEngine`; adds 2048 samples of latency while any band uses it.
 - `CurveFit.h`: fits bells and shelves to a target curve (EQ Sketch, EQ Match).
 - `SpectrumMatch.h`: long-term average spectrum and the match curve between two of them.
+- `Assist.h`: finds resonances (narrow peaks above the local spectrum) and collisions (where a
+  track and its key are both strong) for the Assist panel.
+- `KeyBus.h`: lock-free ring that carries each instance's output to instances that use it as
+  their unmasking key, and the fixed pool of them (found by saved instance ID) the registry owns.
 - `OutputStage.h`: smoothed output gain and bypass.
 - `AudioTap.h`: lock-free mono feed from the audio thread to the analyzer.
 - `SpectrumAnalyzer.h`: FFT, windowing and smoothing for the analyzer (runs on the message thread).
