@@ -79,6 +79,16 @@ jobs:
             test -d "$f" || { echo "missing $f"; exit 1; }
           done
 
+      - name: Install for the current user only
+        run: |
+          installer -pkg "dist/FabCutie-$VERSION-macOS.pkg" -target CurrentUserHomeDirectory
+          for f in ~/Library/Audio/Plug-Ins/Components/FabCutie.component ~/Library/Audio/Plug-Ins/VST3/FabCutie.vst3 \
+                   ~/Library/Audio/Plug-Ins/CLAP/FabCutie.clap ~/Applications/FabCutie.app; do
+            test -d "$f" || { echo "missing $f"; exit 1; }
+          done
+          # Leave only the all-users copy for auval below.
+          rm -rf ~/Library/Audio/Plug-Ins/Components/FabCutie.component
+
       # Validates the Audio Unit the installer put in place.
       - name: Validate AU with auval
         run: |
@@ -149,6 +159,13 @@ jobs:
           $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "installer exited with $($p.ExitCode)"; exit 1 }
           foreach ($f in "$env:CommonProgramFiles\VST3\FabCutie.vst3", "$env:CommonProgramFiles\CLAP\FabCutie.clap", "$env:ProgramFiles\FabCutie\FabCutie.exe") {
+            if (-not (Test-Path $f)) { Write-Error "missing $f"; exit 1 }
+          }
+
+          # Again into folders of our own, as a user picking locations would.
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/DIR=C:\FabTest\App', '/VST3DIR=C:\FabTest\VST3', '/CLAPDIR=C:\FabTest\CLAP' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "installer exited with $($p.ExitCode)"; exit 1 }
+          foreach ($f in "C:\FabTest\VST3\FabCutie.vst3", "C:\FabTest\CLAP\FabCutie.clap", "C:\FabTest\App\FabCutie.exe") {
             if (-not (Test-Path $f)) { Write-Error "missing $f"; exit 1 }
           }
 
