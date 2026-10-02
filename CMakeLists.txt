@@ -1,17 +1,18 @@
 cmake_minimum_required(VERSION 3.22)
 
+# macOS: build universal (Apple Silicon and Intel) and keep running on macOS
+# 11 and later. Both must be set before project(): set afterwards, the
+# deployment target is ignored and the binaries only load on the macOS
+# version of the SDK they were built with. (Ignored on other platforms.)
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
+if(NOT CMAKE_OSX_ARCHITECTURES)
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Architectures to build on macOS")
+endif()
+
 project(FabCutie VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-if(APPLE)
-    # Universal binary so the plugin loads natively on Apple Silicon and Intel Macs.
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-    if(NOT CMAKE_OSX_ARCHITECTURES)
-        set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
-    endif()
-endif()
 
 # ---------------------------------------------------------------------------
 # JUCE: use a local checkout if FABCUTIE_JUCE_PATH is set, otherwise fetch it.
