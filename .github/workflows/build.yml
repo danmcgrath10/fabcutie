@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
+    tags: ['v*'] # a version tag (v0.5.0) also publishes a GitHub Release
   pull_request:
   workflow_dispatch:
 
@@ -16,6 +17,18 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Version
+        shell: bash
+        run: |
+          # The CMake project version, which the plug-in reports. A release
+          # tag must match it (v0.5.0 for 0.5.0).
+          version="$(sed -n 's/^project(FabCutie VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$version" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match the version in CMakeLists.txt ($version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -34,10 +47,20 @@ jobs:
           codesign --force --deep --sign - CLAP/FabCutie.clap
           codesign --force --deep --sign - Standalone/FabCutie.app
 
+      - name: Build installer
+        run: packaging/macos/build-pkg.sh "$VERSION" build/FabCutie_artefacts/Release dist
+
+      - name: Install with the installer
+        run: |
+          sudo installer -pkg "dist/FabCutie-$VERSION-macOS.pkg" -target /
+          for f in /Library/Audio/Plug-Ins/Components/FabCutie.component /Library/Audio/Plug-Ins/VST3/FabCutie.vst3 \
+                   /Library/Audio/Plug-Ins/CLAP/FabCutie.clap /Applications/FabCutie.app; do
+            test -d "$f" || { echo "missing $f"; exit 1; }
+          done
+
+      # Validates the Audio Unit the installer put in place.
       - name: Validate AU with auval
         run: |
-          mkdir -p ~/Library/Audio/Plug-Ins/Components
-          cp -R build/FabCutie_artefacts/Release/AU/FabCutie.component ~/Library/Audio/Plug-Ins/Components/
           killall -9 AudioComponentRegistrar 2>/dev/null || true
           auval -a | grep -i fabcutie || true
           auval -strict -v aufx Fceq Fbct
@@ -55,11 +78,28 @@ jobs:
           name: FabCutie-macOS
           path: FabCutie-macOS-*.zip
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FabCutie-macOS-Installer
+          path: dist/FabCutie-*-macOS.pkg
+
   windows:
     name: Windows (VST3, Standalone)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Version
+        shell: bash
+        run: |
+          # The CMake project version, which the plug-in reports. A release
+          # tag must match it (v0.5.0 for 0.5.0).
+          version="$(sed -n 's/^project(FabCutie VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$version" ]]; then
+            echo "::error::Tag ${GITHUB_REF#refs/tags/} does not match the version in CMakeLists.txt ($version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Configure
         run: cmake -S . -B build
@@ -70,6 +110,32 @@ jobs:
       - name: Test EQ engine
         run: ctest --test-dir build -C Release --output-on-failure
 
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          & $iscc "/DAppVersion=$env:VERSION" "/DArtefacts=$env:GITHUB_WORKSPACE\build\FabCutie_artefacts\Release" "/O$env:GITHUB_WORKSPACE\dist" packaging\windows\FabCutie.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install with the installer
+        shell: pwsh
+        run: |
+          $setup = "dist\FabCutie-$env:VERSION-Windows-Setup.exe"
+          $p = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "installer exited with $($p.ExitCode)"; exit 1 }
+          foreach ($f in "$env:CommonProgramFiles\VST3\FabCutie.vst3", "$env:CommonProgramFiles\CLAP\FabCutie.clap", "$env:ProgramFiles\FabCutie\FabCutie.exe") {
+            if (-not (Test-Path $f)) { Write-Error "missing $f"; exit 1 }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FabCutie-Windows-Installer
+          path: dist/FabCutie-*-Windows-Setup.exe
+
       - uses: actions/upload-artifact@v4
         with:
           name: FabCutie-Windows
@@ -77,3 +143,28 @@ jobs:
             build/FabCutie_artefacts/Release/VST3/
             build/FabCutie_artefacts/Release/CLAP/
             build/FabCutie_artefacts/Release/Standalone/
+
+  # On a version tag, publish both installers as a GitHub Release: a
+  # permanent download page that needs no GitHub account.
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: FabCutie-*-Installer
+          merge-multiple: true
+          path: dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "FabCutie ${GITHUB_REF_NAME#v}" \
+            --generate-notes
