@@ -6,6 +6,11 @@ on:
     tags: ['v*'] # a version tag (v0.5.0) also publishes a GitHub Release
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a GitHub Release for the version in CMakeLists.txt (run on main)
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -144,16 +149,21 @@ jobs:
             build/FabCutie_artefacts/Release/CLAP/
             build/FabCutie_artefacts/Release/Standalone/
 
-  # On a version tag, publish both installers as a GitHub Release: a
-  # permanent download page that needs no GitHub account.
+  # On a version tag, or a manual run on main with "publish" ticked, publish
+  # both installers as a GitHub Release: a permanent download page that
+  # needs no GitHub account. A manual run creates the v<version> tag itself.
   release:
     name: Publish release
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
     needs: [macos, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           pattern: FabCutie-*-Installer
@@ -164,7 +174,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "FabCutie ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+          version="$(sed -n 's/^project(FabCutie VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)"
+          tag="v$version"
+
+          # Re-running for a release that exists just refreshes its installers.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "FabCutie $version" \
+              --generate-notes
+          fi

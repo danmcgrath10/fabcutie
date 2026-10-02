@@ -136,7 +136,7 @@ Get the installer from the [latest release](https://github.com/danmcgrath10/fabc
 
 If FabCutie doesn't show up in Logic Pro, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
 
-Every push to `main` also builds on GitHub Actions: the run's Artifacts section has the same installers (**FabCutie-macOS-Installer**, **FabCutie-Windows-Installer**) and plain zips of each format. To publish a release, set the version in `CMakeLists.txt` and push a matching tag (`git tag v0.5.0 && git push origin v0.5.0`).
+Every push to `main` also builds on GitHub Actions: the run's Artifacts section has the same installers (**FabCutie-macOS-Installer**, **FabCutie-Windows-Installer**) and plain zips of each format. To publish a release, set the version in `CMakeLists.txt`, then either push a matching tag (`git tag v0.5.0 && git push origin v0.5.0`) or open **Actions → Build → Run workflow** on `main` and tick **publish**.
 
 ## Build from source (macOS)
 
