@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <semaphore>
 #include <vector>
 
 #include <juce_dsp/juce_dsp.h>
@@ -548,7 +549,7 @@ namespace fabcutie::dsp
     {
     public:
         PhaseStage() : juce::Thread ("FabCutie phase designer") {}
-        ~PhaseStage() override { stopThread (2000); }
+        ~PhaseStage() override { stopDesigner(); }
 
         // Rendering offline: design kernels inline so every change lands on
         // exactly the block it was made in.
@@ -557,7 +558,7 @@ namespace fabcutie::dsp
         void prepare (double newSampleRate, int channels, PhaseMode mode, int resolution,
                       const std::array<BandSettings, maxBands>& bands)
         {
-            stopThread (2000);
+            stopDesigner();
 
             sampleRate = newSampleRate;
             numChannels = std::clamp (channels, 1, PartitionedConvolver::maxChannels);
@@ -704,6 +705,28 @@ namespace fabcutie::dsp
             requestSerial.fetch_add (1);
             bandsSent = bands;
             requestDirty = false;
+            wakeDesigner();
+        }
+
+        // Wakes the designer thread. Real-time safe: a semaphore release is
+        // a lock-free atomic plus, at most, one kernel wake-up call, and the
+        // flag keeps the semaphore from being released twice.
+        void wakeDesigner() noexcept
+        {
+            if (! wakePending.exchange (true))
+                designerWake.release();
+        }
+
+        void stopDesigner()
+        {
+            signalThreadShouldExit();
+            wakeDesigner();
+            stopThread (2000);
+
+            // A wake left over from before the stop would only cost one
+            // pointless pass, but start clean anyway.
+            if (wakePending.exchange (false))
+                designerWake.acquire();
         }
 
         static bool sameBands (const std::array<BandSettings, maxBands>& x, const std::array<BandSettings, maxBands>& y) noexcept
@@ -798,7 +821,13 @@ namespace fabcutie::dsp
         {
             while (! threadShouldExit())
             {
-                wait (3);
+                // Sleeps until a request arrives (or the stage stops), so an
+                // idle instance costs no CPU.
+                designerWake.acquire();
+                wakePending.store (false);
+
+                if (threadShouldExit())
+                    break;
 
                 if (inlineDesign.load() || requestSerial.load() == designedSerial.load())
                     continue;
@@ -838,6 +867,8 @@ namespace fabcutie::dsp
         bool requestDirty = false;
         std::atomic<juce::uint32> requestSerial { 0 }, designedSerial { 0 };
         std::atomic<bool> inlineDesign { false };
+        std::binary_semaphore designerWake { 0 };
+        std::atomic<bool> wakePending { false };
 
         juce::CriticalSection producerLock;
         std::unique_ptr<juce::dsp::FFT> designFft;
