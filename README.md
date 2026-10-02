@@ -8,7 +8,7 @@ A free, open-source parametric EQ for macOS and Windows, in AU, VST3, CLAP and s
 
 ![FabCutie with five bands, Natural Phase and the pre/post analyzer](docs/screenshot.png)
 
-FabCutie is an original project inspired by the workflow of modern "draw-on-the-graph" EQs such as FabFilter Pro-Q. It contains no FabFilter code, artwork or assets and is not affiliated with FabFilter.
+FabCutie is an original project: all of its code, artwork and assets were written for it.
 
 ## Contents
 
