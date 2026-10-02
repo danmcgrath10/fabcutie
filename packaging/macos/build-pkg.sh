@@ -36,9 +36,30 @@ for entry in "${components[@]}"; do
     # Installer otherwise "relocates" a bundle to wherever it finds one with
     # the same identifier (an old copy in ~/Library, a build folder...), so
     # the new version could land somewhere the host never looks.
+    # Written by hand: pkgbuild --analyze doesn't list plug-in bundles.
+    # Not version checked either, so reinstalling or going back to an
+    # older version always replaces what is there.
     plist="$work/$id.plist"
-    pkgbuild --analyze --root "$root" "$plist" > /dev/null
-    /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$plist"
+    cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+    <dict>
+        <key>RootRelativeBundlePath</key>
+        <string>$(basename "$bundle")</string>
+        <key>BundleIsRelocatable</key>
+        <false/>
+        <key>BundleIsVersionChecked</key>
+        <false/>
+        <key>BundleHasStrictIdentifier</key>
+        <true/>
+        <key>BundleOverwriteAction</key>
+        <string>upgrade</string>
+    </dict>
+</array>
+</plist>
+PLIST
 
     # Older FabCutie builds were copied by hand into the user's own plug-in
     # folders. Remove that copy (of this format only) so the host doesn't
