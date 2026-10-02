@@ -129,10 +129,10 @@ The plugin reports its latency to the host, so Logic Pro and other DAWs keep it 
 
 Get the installer from the [latest release](https://github.com/danmcgrath10/fabcutie/releases/latest) (no GitHub account needed):
 
-- **macOS:** `FabCutie-<version>-macOS.pkg`. Double-click it and pick the formats you want: Audio Unit (Logic Pro, GarageBand), VST3, CLAP and the standalone app. The plug-ins go into `/Library/Audio/Plug-Ins`, and any FabCutie you copied into your own Plug-Ins folder by hand is replaced so your DAW only sees one. Then quit and reopen Logic Pro.
+- **macOS:** `FabCutie-<version>-macOS.pkg`. Double-click it and pick the formats you want: Audio Unit (Logic Pro, GarageBand), VST3, CLAP and the standalone app. By default everything is installed for all users (`/Library/Audio/Plug-Ins`, `/Applications`); click **Change Install Location...** on the Installation Type step and choose **Install for me only** to use `~/Library/Audio/Plug-Ins` and `~/Applications` instead, with no administrator password. Any FabCutie already in your own Plug-Ins folder is replaced so your DAW only sees one. Then quit and reopen Logic Pro.
 
   The installer isn't signed with an Apple Developer ID, so the first time macOS says it can't check it for malware. Click **Done**, open **System Settings → Privacy & Security**, scroll down to the message about FabCutie and click **Open Anyway**. You only need to do this once per download.
-- **Windows:** `FabCutie-<version>-Windows-Setup.exe` installs the VST3 and CLAP into `C:\Program Files\Common Files` and the standalone app into `C:\Program Files\FabCutie`. If SmartScreen warns about an unknown publisher, click **More info → Run anyway**. Uninstall it from **Settings → Apps**.
+- **Windows:** `FabCutie-<version>-Windows-Setup.exe` asks where to put the standalone app (`C:\Program Files\FabCutie` by default) and, after you pick the formats, the VST3 and CLAP folders (`C:\Program Files\Common Files\VST3` and `...\CLAP` by default, which every host scans). Updates remember your choices. Silent installs take `/DIR=`, `/VST3DIR=` and `/CLAPDIR=`. If SmartScreen warns about an unknown publisher, click **More info → Run anyway**. Uninstall it from **Settings → Apps**.
 
 If FabCutie doesn't show up in Logic Pro, open **Logic Pro → Settings → Plug-in Manager**, select FabCutie and click **Reset & Rescan Selection**. It appears under **Audio FX → FabCutie → FabCutie**.
 

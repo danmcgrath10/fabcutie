@@ -4,7 +4,10 @@
     <welcome file="welcome.html" mime-type="text/html"/>
     <license file="LICENSE.txt"/>
     <options customize="always" require-scripts="false" hostArchitectures="arm64,x86_64"/>
-    <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+    <!-- "Install for all users" puts everything in /Library and /Applications;
+         "Install for me only" in ~/Library and ~/Applications, with no
+         administrator password. -->
+    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>
     <os-version min="11.0"/>
 
     <choices-outline>
@@ -14,16 +17,16 @@
         <line choice="app"/>
     </choices-outline>
 
-    <choice id="au" title="Audio Unit (Logic Pro, GarageBand)" description="Installs FabCutie.component into /Library/Audio/Plug-Ins/Components.">
+    <choice id="au" title="Audio Unit (Logic Pro, GarageBand)" description="Installs FabCutie.component into the Audio/Plug-Ins/Components folder of the Library you chose (all users or just you).">
         <pkg-ref id="io.github.danmcgrath10.fabcutie.au"/>
     </choice>
-    <choice id="vst3" title="VST3" description="Installs FabCutie.vst3 into /Library/Audio/Plug-Ins/VST3.">
+    <choice id="vst3" title="VST3" description="Installs FabCutie.vst3 into the Audio/Plug-Ins/VST3 folder of the Library you chose.">
         <pkg-ref id="io.github.danmcgrath10.fabcutie.vst3"/>
     </choice>
-    <choice id="clap" title="CLAP" description="Installs FabCutie.clap into /Library/Audio/Plug-Ins/CLAP.">
+    <choice id="clap" title="CLAP" description="Installs FabCutie.clap into the Audio/Plug-Ins/CLAP folder of the Library you chose.">
         <pkg-ref id="io.github.danmcgrath10.fabcutie.clap"/>
     </choice>
-    <choice id="app" title="Standalone app" description="Installs FabCutie.app into /Applications.">
+    <choice id="app" title="Standalone app" description="Installs FabCutie.app into Applications (your own Applications folder if you install for yourself only).">
         <pkg-ref id="io.github.danmcgrath10.fabcutie.app"/>
     </choice>
 

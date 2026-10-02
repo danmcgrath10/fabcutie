@@ -1,7 +1,9 @@
 #!/bin/bash
 # Builds FabCutie-<version>-macOS.pkg: one installer with a choice of AU,
-# VST3, CLAP and the standalone app. Run after a Release build (and after
-# signing the bundles).
+# VST3, CLAP and the standalone app, for all users (/Library, /Applications)
+# or just the current one (~/Library, ~/Applications; the install locations
+# below are then taken relative to the home folder). Run after a Release
+# build (and after signing the bundles).
 #
 #   packaging/macos/build-pkg.sh <version> <artefacts dir> <output dir>
 set -euo pipefail
