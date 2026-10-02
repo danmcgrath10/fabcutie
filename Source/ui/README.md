@@ -23,5 +23,6 @@ Editor components.
   The editor swaps everything bound to one instance (model, graph, band panel, analyzer, meter,
   header attachments) when it is pointed at another; `EqGraph::setOverlays` draws the shown curves.
 - `MatchPanel.*`: EQ Match: reference choice, capture, learn, amount, band count, preview and Apply.
+- `AssistPanel.*`: Assist: resonance finder and unmasking (key choice, learn, preview, Apply).
 
 The undo history, A/B slots, presets and MIDI map live in `Source/workflow/` and are owned by the processor, so they outlive the window.

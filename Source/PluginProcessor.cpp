@@ -22,6 +22,7 @@ FabCutieAudioProcessor::FabCutieAudioProcessor()
         bandParams[(size_t) b].attach (state, b);
 
     instanceNumber = registry->add (*this);
+    adoptInstanceId (0);
     state.addParameterListener (fabcutie::params::id::phaseMode, this);
     state.addParameterListener (fabcutie::params::id::linearResolution, this);
     startTimerHz (30);
@@ -31,6 +32,7 @@ FabCutieAudioProcessor::~FabCutieAudioProcessor()
 {
     // First, so editors showing this instance let go of it while it is whole.
     registry->remove (*this);
+    registry->getKeyBuses().release (keyBus);
     stopTimer();
 
     state.removeParameterListener (fabcutie::params::id::phaseMode, this);
@@ -42,6 +44,56 @@ namespace
 {
     // Saved in the state tree next to the parameters.
     const juce::Identifier instanceNameId { "instanceName" };
+    const juce::Identifier instanceIdId { "instanceId" };   // hex
+    const juce::Identifier keyInstanceIdId { "unmaskKey" }; // hex, the key instance's ID
+
+    std::uint64_t parseId (const juce::var& v)
+    {
+        return (std::uint64_t) v.toString().getHexValue64();
+    }
+
+    juce::String formatId (std::uint64_t id)
+    {
+        return juce::String::toHexString ((juce::int64) id);
+    }
+}
+
+void FabCutieAudioProcessor::adoptInstanceId (std::uint64_t wanted)
+{
+    // A saved ID is kept unless another live instance already has it (a
+    // duplicated track restores the same state twice); else a fresh one.
+    auto& buses = registry->getKeyBuses();
+    auto id = wanted;
+
+    if (id == 0 || (buses.find (id) != nullptr && buses.find (id) != keyBus))
+    {
+        if (wanted == 0 && instanceId.load() != 0)
+            id = instanceId.load();
+        else
+            do { id = (std::uint64_t) juce::Random::getSystemRandom().nextInt64(); } while (id == 0 || buses.find (id) != nullptr);
+    }
+
+    instanceId.store (id);
+
+    if (keyBus == nullptr)
+        keyBus = buses.claim (id);
+    else
+        buses.rename (keyBus, id);
+
+    state.state.setProperty (instanceIdId, formatId (id), nullptr);
+}
+
+void FabCutieAudioProcessor::setKeyInstanceId (std::uint64_t id)
+{
+    if (id == instanceId.load())
+        id = 0; // never its own key
+
+    keyInstanceId.store (id);
+
+    if (id == 0)
+        state.state.removeProperty (keyInstanceIdId, nullptr);
+    else
+        state.state.setProperty (keyInstanceIdId, formatId (id), nullptr);
 }
 
 juce::String FabCutieAudioProcessor::getCustomInstanceName() const
@@ -301,6 +353,9 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
 
     pushOutputSettings();
     outputStage.prepare (spec);
+
+    keyBuffer.setSize (fabcutie::dsp::KeyBus::numChannels, juce::jmax (samplesPerBlock, 4096));
+    keyReader = {};
 }
 
 bool FabCutieAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -344,9 +399,29 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
     const auto numSamples = main.getNumSamples();
 
     auto* sidechainBus = getBus (true, 1);
-    const auto hasSidechain = sidechainBus != nullptr && sidechainBus->isEnabled()
+    auto hasSidechain = sidechainBus != nullptr && sidechainBus->isEnabled()
                            && sidechainBus->getNumberOfChannels() > 0;
     auto sidechain = hasSidechain ? getBusBuffer (buffer, true, 1) : juce::AudioBuffer<float>();
+
+    // A key instance takes the place of the host's sidechain.
+    const auto keyId = keyInstanceId.load (std::memory_order_relaxed);
+    const auto* key = registry->getKeyBuses().find (keyId);
+    auto keyed = false;
+
+    if (keyId != keyReaderId)
+    {
+        keyReader = {};
+        keyReaderId = keyId;
+    }
+
+    if (key != nullptr && numSamples <= keyBuffer.getNumSamples())
+    {
+        keyed = key->read (keyReader, keyBuffer.getArrayOfWritePointers(), keyBuffer.getNumChannels(), numSamples);
+        sidechain = juce::AudioBuffer<float> (keyBuffer.getArrayOfWritePointers(), keyBuffer.getNumChannels(), numSamples);
+        hasSidechain = true;
+    }
+
+    keyActive.store (keyed, std::memory_order_relaxed);
     editorLink.sidechainConnected.store (hasSidechain, std::memory_order_relaxed);
 
     const auto analyze = editorLink.analyzerUsers.load (std::memory_order_relaxed) > 0;
@@ -365,6 +440,14 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
         if (hasSidechain)
             editorLink.matchReference.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
+    }
+
+    if (editorLink.assistLearning.load (std::memory_order_relaxed))
+    {
+        editorLink.assistSource.push (main.getArrayOfReadPointers(), numChannels, numSamples);
+
+        if (hasSidechain)
+            editorLink.assistKey.push (sidechain.getArrayOfReadPointers(), sidechain.getNumChannels(), numSamples);
     }
 
     // Natural / linear phase FIR first (it delays the signal, so the
@@ -390,6 +473,10 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     pushOutputSettings();
     outputStage.process (main);
+
+    // What other instances hear when they use this one as their key.
+    if (keyBus != nullptr)
+        keyBus->write (main.getArrayOfReadPointers(), numChannels, numSamples);
 
     pushSoloSettings();
     solo.process (main, numChannels);
@@ -448,6 +535,9 @@ void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBy
 
     const auto tree = juce::ValueTree::fromXml (*xml);
     state.replaceState (tree);
+
+    adoptInstanceId (parseId (tree.getProperty (instanceIdId)));
+    keyInstanceId.store (parseId (tree.getProperty (keyInstanceIdId)));
 
     abCompare.fromTree (tree.getChildWithName (ABCompare::treeType));
     midiLearn.fromTree (tree.getChildWithName (MidiLearn::treeType));

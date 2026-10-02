@@ -19,6 +19,12 @@ namespace fabcutie::dsp
         AudioTap matchReference;
         std::atomic<bool> matchLearning { false };
 
+        // The Assist panel (resonance finder, unmasking) has its own taps
+        // too: the input before the EQ, and the sidechain (or key instance).
+        AudioTap assistSource;
+        AudioTap assistKey;
+        std::atomic<bool> assistLearning { false };
+
         PeakMeter outputMeter;
 
         // How many editors are showing an analyzer of this instance, so the

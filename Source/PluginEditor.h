@@ -5,6 +5,7 @@
 
 #include "InstanceRegistry.h"
 #include "ui/AnalyzerBar.h"
+#include "ui/AssistPanel.h"
 #include "ui/BandPanel.h"
 #include "ui/EqGraph.h"
 #include "ui/EqModel.h"
@@ -20,7 +21,7 @@
 class FabCutieAudioProcessor;
 
 // The main window: a header with the instance list, undo, presets, A/B, EQ
-// Sketch and EQ Match, output gain and bypass; the frequency graph with the
+// Sketch, EQ Match and Assist, output gain and bypass; the frequency graph with the
 // spectrum analyzer behind it and the output meter beside it; a bar
 // underneath with the analyzer toggles, character, phase mode, gain scale,
 // auto gain and phase invert; and a band panel that floats next to the
@@ -56,6 +57,7 @@ private:
     void updateOverlays();
     void updateBandPanel();
     void updateMatchPanel();
+    void showToolPanel (juce::TextButton*); // Match or Assist, or nullptr for neither
     void applyAnalyzerSettings (const fabcutie::ui::AnalyzerSettings&);
     bool isEditingOther() const noexcept;
 
@@ -74,7 +76,7 @@ private:
     juce::Slider outputGain { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxLeft };
     juce::TextButton bypassButton { "Bypass" };
     juce::ComboBox characterBox;
-    juce::TextButton sketchButton { "Sketch" }, matchButton { "Match" };
+    juce::TextButton sketchButton { "Sketch" }, matchButton { "Match" }, assistButton { "Assist" };
     juce::ComboBox phaseBox; // phase mode and, for linear phase, its resolution
 
     juce::TextButton instancesButton, backButton { "Back" };

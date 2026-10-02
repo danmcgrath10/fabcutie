@@ -84,6 +84,17 @@ public:
     juce::String getCustomInstanceName() const;
     void setCustomInstanceName (const juce::String&); // message thread; empty to clear
 
+    // Auto-unmasking. Every instance has an ID saved with the session, and
+    // can take another instance's output as its key: that output then feeds
+    // the sidechain in place of the host's, so External dynamic bands duck
+    // under it. 0 means no key (the host sidechain, if any).
+    std::uint64_t getInstanceId() const noexcept { return instanceId.load(); }
+    std::uint64_t getKeyInstanceId() const noexcept { return keyInstanceId.load(); }
+    void setKeyInstanceId (std::uint64_t); // message thread
+
+    // True while the key instance is sending audio.
+    bool isKeyActive() const noexcept { return keyActive.load (std::memory_order_relaxed); }
+
     // The current band values, readable from any thread (for overlays).
     std::array<fabcutie::dsp::BandSettings, fabcutie::dsp::maxBands> readBands() const noexcept;
 
@@ -98,6 +109,14 @@ private:
     juce::String trackName;
     juce::SpinLock trackNameLock;
     fabcutie::dsp::ChannelMap channelMap;
+
+    std::atomic<std::uint64_t> instanceId { 0 }, keyInstanceId { 0 };
+    fabcutie::dsp::KeyBus* keyBus = nullptr; // this instance's output, for others
+    fabcutie::dsp::KeyBus::Reader keyReader;
+    std::uint64_t keyReaderId = 0; // the key keyReader follows (audio thread)
+    juce::AudioBuffer<float> keyBuffer;
+    std::atomic<bool> keyActive { false };
+    void adoptInstanceId (std::uint64_t);
 
     std::atomic<float>* outputGainDb = nullptr;
     std::atomic<float>* bypass = nullptr;
