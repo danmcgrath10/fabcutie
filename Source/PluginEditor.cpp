@@ -101,8 +101,7 @@ struct FabCutieAudioProcessorEditor::View
 
 FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcessor& p)
     : AudioProcessorEditor (&p),
-      owner (p),
-      analyzerBar ([this] { return view != nullptr && view->link.sidechainConnected.load(); })
+      owner (p)
 {
     using namespace fabcutie;
 
@@ -191,6 +190,10 @@ FabCutieAudioProcessorEditor::FabCutieAudioProcessorEditor (FabCutieAudioProcess
     setLookAndFeel (&lookAndFeel);
 
     setTarget (owner);
+
+    // Not in the initialiser list: the callback reads `view`, which is
+    // declared (and so built) after the bar.
+    analyzerBar.setSidechainSource ([this] { return view != nullptr && view->link.sidechainConnected.load(); });
     registry->addListener (this);
     startTimerHz (15);
 

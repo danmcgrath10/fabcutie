@@ -31,7 +31,7 @@ namespace fabcutie::dsp
     // The bands' static gain stays in the regular EQ; only the dynamic
     // offset happens here. The stage delays the signal by fftSize samples,
     // so it only runs (and the plugin only reports latency) while at least
-    // one band uses it.
+    // one band has its spectral switch set (see isReserved()).
     class SpectralDynamics
     {
     public:
@@ -108,6 +108,7 @@ namespace fabcutie::dsp
             }
 
             b.on = on;
+            b.reserved = s.dynamics.spectral && supportsDynamics (s.type);
             b.settings = s;
         }
 
@@ -133,6 +134,15 @@ namespace fabcutie::dsp
         bool isActive() const noexcept
         {
             return std::any_of (bands.begin(), bands.end(), [] (const Band& b) { return b.on; });
+        }
+
+        // True when any band has its spectral switch set, whether or not
+        // the band (or its dynamics) is switched on right now. The stage
+        // runs, and its latency is reported, on this, so automating a band
+        // on and off never changes the plug-in's latency mid-playback.
+        bool isReserved() const noexcept
+        {
+            return std::any_of (bands.begin(), bands.end(), [] (const Band& b) { return b.reserved; });
         }
 
         // The band's strongest current gain offset, in dB, for the display.
@@ -182,6 +192,7 @@ namespace fabcutie::dsp
         struct Band
         {
             bool on = false;
+            bool reserved = false; // spectral switch set, the band on or not
             BandSettings settings;
             bool shapeValid = false;
             std::vector<float> weight;   // per bin, signed: the band's shape at a +1 dB offset

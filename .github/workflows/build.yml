@@ -12,6 +12,9 @@ on:
         type: boolean
         default: false
 
+env:
+  PLUGINVAL_VERSION: 1.0.4
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -41,7 +44,7 @@ jobs:
       - name: Build
         run: cmake --build build --config Release -j "$(sysctl -n hw.ncpu)"
 
-      - name: Test EQ engine
+      - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
       # Every slice of every binary must run on macOS 11, not just on the
@@ -96,6 +99,16 @@ jobs:
           auval -a | grep -i fabcutie || true
           auval -strict -v aufx Fceq Fbct
 
+      # Drives the plug-ins the way hosts do: editor open/close, state
+      # save/restore, bus layouts, odd block sizes and parameter fuzzing.
+      - name: Validate AU and VST3 with pluginval
+        run: |
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/v${PLUGINVAL_VERSION}/pluginval_macOS.zip"
+          unzip -q pluginval.zip
+          for plugin in /Library/Audio/Plug-Ins/Components/FabCutie.component /Library/Audio/Plug-Ins/VST3/FabCutie.vst3; do
+            ./pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --validate-in-process --timeout-ms 600000 --validate "$plugin"
+          done
+
       - name: Package
         run: |
           cd build/FabCutie_artefacts/Release
@@ -138,8 +151,17 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test EQ engine
+      - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Validate VST3 with pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/v$env:PLUGINVAL_VERSION/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval
+          # Start-Process -Wait, as pluginval may be a GUI-subsystem exe that the shell doesn't wait for.
+          $p = Start-Process -FilePath "pluginval\pluginval.exe" -NoNewWindow -Wait -PassThru -ArgumentList '--strictness-level', '10', '--validate-in-process', '--timeout-ms', '600000', '--validate', "$env:GITHUB_WORKSPACE\build\FabCutie_artefacts\Release\VST3\FabCutie.vst3"
+          if ($p.ExitCode -ne 0) { Write-Error "pluginval exited with $($p.ExitCode)"; exit 1 }
 
       - name: Build installer
         shell: pwsh
@@ -182,6 +204,46 @@ jobs:
             build/FabCutie_artefacts/Release/CLAP/
             build/FabCutie_artefacts/Release/Standalone/
 
+  # The VST3 and the tests built with AddressSanitizer, so reading memory
+  # that isn't there yet (or any more) fails CI instead of crashing a host.
+  linux-asan:
+    name: Linux (AddressSanitizer, pluginval)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libgl-dev xvfb ninja-build
+
+      - name: Configure
+        run: |
+          flags="-fsanitize=address -fno-omit-frame-pointer"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DFABCUTIE_BUILD_CLAP=OFF \
+            -DCMAKE_C_FLAGS="$flags" -DCMAKE_CXX_FLAGS="$flags" \
+            -DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address \
+            -DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: xvfb-run -a ctest --test-dir build --output-on-failure
+
+      # pluginval itself isn't built with ASan, so the runtime is preloaded.
+      - name: Validate VST3 with pluginval
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          curl -sSL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/v${PLUGINVAL_VERSION}/pluginval_Linux.zip"
+          unzip -q pluginval.zip
+          LD_PRELOAD="$(gcc -print-file-name=libasan.so)" xvfb-run -a ./pluginval --strictness-level 10 --validate-in-process \
+            --timeout-ms 600000 --validate build/FabCutie_artefacts/RelWithDebInfo/VST3/FabCutie.vst3
+
   # On a version tag, or a manual run on main with "publish" ticked, publish
   # both installers as a GitHub Release: a permanent download page that
   # needs no GitHub account. A manual run creates the v<version> tag itself.
@@ -190,7 +252,7 @@ jobs:
     if: >-
       startsWith(github.ref, 'refs/tags/v') ||
       (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main')
-    needs: [macos, windows]
+    needs: [macos, windows, linux-asan]
     runs-on: ubuntu-latest
     permissions:
       contents: write

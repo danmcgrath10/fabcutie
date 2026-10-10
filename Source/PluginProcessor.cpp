@@ -178,6 +178,53 @@ int FabCutieAudioProcessor::totalLatency() const noexcept
 void FabCutieAudioProcessor::handleAsyncUpdate()
 {
     setLatencySamples (totalLatency());
+
+    if (restorePending.exchange (false))
+    {
+        juce::ValueTree tree;
+
+        {
+            const juce::ScopedLock sl (pendingRestoreLock);
+            tree = std::exchange (pendingRestore, {});
+        }
+
+        finishRestore (tree);
+    }
+}
+
+double FabCutieAudioProcessor::getTailLengthSeconds() const
+{
+    // How long the output keeps sounding once the input stops, beyond the
+    // reported latency, so hosts that skip silent plug-ins or render
+    // without a tail don't cut it off.
+    const auto sampleRate = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    auto samples = 0;
+
+    if (const auto mode = currentPhaseMode(); mode != fabcutie::dsp::PhaseMode::zeroLatency)
+    {
+        const auto layout = fabcutie::dsp::makePhaseLayout (mode, currentLinearResolution(), sampleRate);
+        samples += layout.kernelLength - layout.kernelDelay;
+    }
+
+    if (spectralRunning.load())
+        samples += fabcutie::dsp::SpectralDynamics::fftSize;
+
+    // A narrow band low down rings longest: about 6.9 time constants
+    // (Q / (pi f) each) to fall 60 dB. Capped, so a 10 Hz notch doesn't
+    // ask for several seconds.
+    auto ringing = 0.0;
+
+    for (const auto& band : readBands())
+        if (band.enabled)
+            ringing = std::max (ringing, 6.9 * std::max (0.707, (double) band.q)
+                                             / (juce::MathConstants<double>::pi * std::max (10.0, (double) band.frequency)));
+
+    return (double) samples / sampleRate + std::min (ringing, 1.0);
+}
+
+juce::AudioProcessorParameter* FabCutieAudioProcessor::getBypassParameter() const
+{
+    return state.getParameter (fabcutie::params::id::bypass);
 }
 
 void FabCutieAudioProcessor::pushBandSettings() noexcept
@@ -288,22 +335,42 @@ void FabCutieAudioProcessor::pushCharacterMode() noexcept
     characterStage.setMode ((fabcutie::dsp::CharacterMode) juce::jlimit (0, fabcutie::dsp::numCharacterModes - 1, index));
 }
 
-void FabCutieAudioProcessor::updateSpectralStage() noexcept
+void FabCutieAudioProcessor::processSpectralStage (juce::AudioBuffer<float>& main, juce::AudioBuffer<float>* sidechain) noexcept
 {
     // The spectral stage delays the signal, so it only runs (and the plugin
-    // only reports its latency) while a band uses it. Starting it clears out
-    // whatever it held from the last time.
-    const auto wanted = spectral.isActive();
+    // only reports its latency) while a band has its spectral switch set.
+    // Switching it in or out fades the output out on the old path and back
+    // in on the new one, instead of jumping between a delayed and an
+    // undelayed signal.
+    if (spectralRunning)
+        spectral.process (main, sidechain);
 
-    if (wanted == spectralRunning)
-        return;
+    const auto numSamples = main.getNumSamples();
+    const auto fadeSamples = std::max (1.0, 0.01 * currentSampleRate.load());
 
-    spectralRunning = wanted;
-
-    if (wanted)
+    if (spectral.isReserved() != spectralRunning)
+    {
+        main.applyGainRamp (0, numSamples, spectralFade, 0.0f);
+        spectralRunning = ! spectralRunning;
         spectral.reset();
+        spectralFade = 0.0f;
+        triggerAsyncUpdate();
+    }
+    else if (spectralFade < 1.0f)
+    {
+        const auto end = std::min (1.0f, spectralFade + (float) (numSamples / fadeSamples));
+        main.applyGainRamp (0, numSamples, spectralFade, end);
+        spectralFade = end;
+    }
+}
 
-    triggerAsyncUpdate();
+void FabCutieAudioProcessor::clearDspState() noexcept
+{
+    phaseStage.clearState();
+    eq.clearState();
+    spectral.reset();
+    characterStage.reset();
+    solo.clearState();
 }
 
 void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
@@ -341,8 +408,8 @@ void FabCutieAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     updateAutoGain (audioAutoGainStage);
     eq.prepare (sampleRate);
     spectral.prepare (sampleRate);
-    spectralRunning = ! spectral.isActive();
-    updateSpectralStage();
+    spectralRunning = spectral.isReserved();
+    spectralFade = 1.0f;
     setLatencySamples (totalLatency());
 
     pushSoloSettings();
@@ -403,6 +470,12 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
                            && sidechainBus->getNumberOfChannels() > 0;
     auto sidechain = hasSidechain ? getBusBuffer (buffer, true, 1) : juce::AudioBuffer<float>();
 
+    // NaN or infinity from upstream would stay in the filters for good.
+    fabcutie::dsp::scrubNonFinite (main);
+
+    if (hasSidechain)
+        fabcutie::dsp::scrubNonFinite (sidechain);
+
     // A key instance takes the place of the host's sidechain.
     const auto keyId = keyInstanceId.load (std::memory_order_relaxed);
     const auto* key = registry->getKeyBuses().find (keyId);
@@ -461,9 +534,7 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     eq.process (main, hasSidechain ? &sidechain : nullptr);
 
-    updateSpectralStage();
-    if (spectralRunning)
-        spectral.process (main, hasSidechain ? &sidechain : nullptr);
+    processSpectralStage (main, hasSidechain ? &sidechain : nullptr);
 
     for (int b = 0; b < fabcutie::dsp::maxBands; ++b)
         dynamicGains[(size_t) b].store (eq.getDynamicGainDb (b) + spectral.getGainDb (b), std::memory_order_relaxed);
@@ -473,6 +544,12 @@ void FabCutieAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
 
     pushOutputSettings();
     outputStage.process (main);
+
+    // The input is clean, so this should never fire; if a stage still went
+    // bad, mute the bad samples and start every stage over rather than
+    // passing NaN down the host's mix.
+    if (fabcutie::dsp::scrubNonFinite (main))
+        clearDspState();
 
     // What other instances hear when they use this one as their key.
     if (keyBus != nullptr)
@@ -516,9 +593,20 @@ void FabCutieAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     for (const auto& type : { ABCompare::treeType, MidiLearn::treeType, Presets::treeType })
         copy.removeChild (copy.getChildWithName (type), nullptr);
 
-    copy.appendChild (abCompare.toTree(), nullptr);
+    // A restore the message thread hasn't finished yet still saves what it restored.
+    juce::ValueTree pending;
+
+    if (restorePending.load())
+    {
+        const juce::ScopedLock sl (pendingRestoreLock);
+        pending = pendingRestore;
+    }
+
+    const auto pendingChild = [&pending] (const juce::Identifier& type) { return pending.getChildWithName (type).createCopy(); };
+
+    copy.appendChild (pending.isValid() ? pendingChild (ABCompare::treeType) : abCompare.toTree(), nullptr);
     copy.appendChild (midiLearn.toTree(), nullptr);
-    copy.appendChild (presets.toTree(), nullptr);
+    copy.appendChild (pending.isValid() ? pendingChild (Presets::treeType) : presets.toTree(), nullptr);
 
     if (auto xml = copy.createXml())
         copyXmlToBinary (*xml, destData);
@@ -533,23 +621,70 @@ void FabCutieAudioProcessor::setStateInformation (const void* data, int sizeInBy
     if (xml == nullptr || ! xml->hasTagName (state.state.getType()))
         return;
 
-    const auto tree = juce::ValueTree::fromXml (*xml);
+    auto tree = juce::ValueTree::fromXml (*xml);
+
+    // A parameter the saved state doesn't mention (it is older than the
+    // parameter) takes its default; left alone it would keep whatever this
+    // instance had before the load.
+    for (auto* parameter : getParameters())
+    {
+        if (auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter))
+        {
+            if (! tree.getChildWithProperty ("id", ranged->getParameterID()).isValid())
+            {
+                juce::ValueTree child ("PARAM");
+                child.setProperty ("id", ranged->getParameterID(), nullptr);
+                child.setProperty ("value", ranged->convertFrom0to1 (ranged->getDefaultValue()), nullptr);
+                tree.appendChild (child, nullptr);
+            }
+        }
+    }
+
     state.replaceState (tree);
 
     adoptInstanceId (parseId (tree.getProperty (instanceIdId)));
     keyInstanceId.store (parseId (tree.getProperty (keyInstanceIdId)));
-
-    abCompare.fromTree (tree.getChildWithName (ABCompare::treeType));
     midiLearn.fromTree (tree.getChildWithName (MidiLearn::treeType));
-    presets.fromTree (tree.getChildWithName (Presets::treeType));
 
-    // A restored session starts a fresh undo history.
     if (juce::MessageManager::existsAndIsCurrentThread())
-        history.reset();
+    {
+        {
+            // This load replaces any earlier one still waiting.
+            const juce::ScopedLock sl (pendingRestoreLock);
+            restorePending.store (false);
+            pendingRestore = {};
+        }
+
+        finishRestore (tree);
+    }
+    else
+    {
+        {
+            const juce::ScopedLock sl (pendingRestoreLock);
+            pendingRestore = tree;
+        }
+
+        restorePending.store (true);
+        triggerAsyncUpdate();
+    }
+
     registry->notifyChanged(); // the saved name may differ
 
     // Let the host know the session's latency before playback starts.
-    handleAsyncUpdate();
+    setLatencySamples (totalLatency());
+}
+
+void FabCutieAudioProcessor::finishRestore (const juce::ValueTree& tree)
+{
+    using namespace fabcutie::workflow;
+
+    // Message thread: the editor reads these. Presets rescans the preset
+    // folder on disk, which a host's loading thread shouldn't wait on.
+    abCompare.fromTree (tree.getChildWithName (ABCompare::treeType));
+    presets.fromTree (tree.getChildWithName (Presets::treeType));
+
+    // A restored session starts a fresh undo history.
+    history.reset();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

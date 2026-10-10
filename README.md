@@ -107,7 +107,7 @@ Switch on **DYN** in the band panel and the band's gain follows the signal level
 
 Each dynamic band listens to its own input (**Internal**) or the plugin's sidechain input (**External**), either filtered to the band's region or wide open. In Logic Pro, choose a track or bus from the **Side Chain** menu in the plugin window's header. With no sidechain selected, external bands hear silence and stay at their static gain.
 
-Switch on **SPEC** as well and the band works bin by bin, so only the frequencies inside it that cross the threshold move. The threshold reads like the analyzer (a full-scale sine is 0 dB). While any band is spectral the plugin adds 2048 samples of latency.
+Switch on **SPEC** as well and the band works bin by bin, so only the frequencies inside it that cross the threshold move. The threshold reads like the analyzer (a full-scale sine is 0 dB). While any band has **SPEC** switched on (even if the band itself is off) the plugin adds 2048 samples of latency, so automating bands on and off never changes the latency mid-song. Switching SPEC on or off fades the output briefly instead of clicking.
 
 ### EQ Sketch and EQ Match
 
@@ -230,14 +230,14 @@ Source/
   InstanceRegistry.h    every FabCutie in the host process, for the instance list
   dsp/                  audio-thread code: EQ engine, filter design, phase modes, dynamics
   ui/                   editor components: graph, band panel, analyzer, meter
-Tests/                  offline DSP tests (ctest)
+Tests/                  offline DSP and whole-plugin tests (ctest; on Linux run under xvfb-run)
 packaging/              macOS .pkg and Windows Inno Setup installers
-.github/workflows/      macOS and Windows CI: tests, installers, auval, releases
+.github/workflows/      CI: tests, installers, auval, pluginval, an AddressSanitizer build, releases
 ```
 
 ### CI and releases
 
-Every push to `main` builds and tests on macOS and Windows, test-installs both installers and runs `auval`. The run's Artifacts section has the installers and plain zips of each format. To publish a release, set the version in `CMakeLists.txt`, then push a matching tag (`git tag v0.5.1 && git push origin v0.5.1`) or run **Actions → Build → Run workflow** on `main` with **publish** ticked.
+Every push to `main` builds and tests on macOS and Windows, test-installs both installers, runs `auval` and [pluginval](https://github.com/Tracktion/pluginval) (strictness 10) on the AU and VST3, and runs the tests and pluginval again on Linux with AddressSanitizer. The run's Artifacts section has the installers and plain zips of each format. To publish a release, set the version in `CMakeLists.txt`, then push a matching tag (`git tag v0.5.1 && git push origin v0.5.1`) or run **Actions → Build → Run workflow** on `main` with **publish** ticked.
 
 ## License
 

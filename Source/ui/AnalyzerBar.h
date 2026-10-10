@@ -13,7 +13,11 @@ namespace fabcutie::ui
                               private juce::Timer
     {
     public:
-        explicit AnalyzerBar (std::function<bool()> sidechainConnected);
+        AnalyzerBar();
+
+        // Tells the bar whether the host feeds the sidechain. Set it once
+        // the owner is fully built: the bar asks right away.
+        void setSidechainSource (std::function<bool()> isConnected);
 
         void setSettings (const AnalyzerSettings&);
         const AnalyzerSettings& getSettings() const noexcept { return settings; }
