@@ -238,8 +238,13 @@ namespace
         std::thread loader ([&] { p.setStateInformation (data.getData(), (int) data.getSize()); });
         loader.join();
 
-        check (juce::approximatelyEqual (get (p, fabcutie::params::id::outputGain), -3.0f),
-               "state restored off the message thread sets the parameters");
+        // Compared with what the source holds, not -3 itself: the round trip
+        // through the parameter's 0..1 range may not land exactly on -3.
+        const auto restored = get (p, fabcutie::params::id::outputGain);
+        const auto expected = get (source, fabcutie::params::id::outputGain);
+        check (std::abs (restored - expected) < 1.0e-3f && std::abs (expected + 3.0f) < 0.01f,
+               "state restored off the message thread sets the parameters (got " + std::to_string (restored)
+                   + ", saved " + std::to_string (expected) + ")");
 
         // Saved again before the message thread caught up: nothing is lost.
         auto again = juce::AudioProcessor::getXmlFromBinary (saveState (p).getData(), (int) saveState (p).getSize());
