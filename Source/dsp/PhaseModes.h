@@ -682,6 +682,14 @@ namespace fabcutie::dsp
             }
         }
 
+        // Clears the convolution history (after the signal went bad); the
+        // kernel stays.
+        void clearState() noexcept
+        {
+            convolver.reset();
+            sidechainDelay.reset();
+        }
+
         // Delays the sidechain by the stage's latency.
         void processSidechain (juce::AudioBuffer<float>& sidechain) noexcept
         {

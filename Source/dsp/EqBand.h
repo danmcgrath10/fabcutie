@@ -46,6 +46,15 @@ namespace fabcutie::dsp
             }
         }
 
+        // Clears the filter memory and the detector, keeping the settings.
+        void clearState() noexcept
+        {
+            state = {};
+            dynamics.reset();
+            dynamicGainDb = 0.0f;
+            updateDesign();
+        }
+
         // Call once per block before process(). Swaps in a pending structure
         // once the band has faded out. Returns the placement to process with.
         Placement beginBlock() noexcept

@@ -125,9 +125,9 @@ if(FABCUTIE_BUILD_CLAP)
 endif()
 
 # ---------------------------------------------------------------------------
-# Offline tests (run with ctest). They only need juce_audio_basics (juce_dsp
-# for the character stage, juce_audio_processors for the workflow tests), so
-# they build without the plugin formats.
+# Offline tests (run with ctest). Most only need juce_audio_basics (juce_dsp
+# for the character stage, juce_audio_processors for the workflow tests);
+# the processor tests link the plug-in's shared code.
 # ---------------------------------------------------------------------------
 option(FABCUTIE_BUILD_TESTS "Build the DSP tests" ON)
 
@@ -231,4 +231,21 @@ if(FABCUTIE_BUILD_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME AssistTests COMMAND FabCutieAssistTests)
+
+    # The whole plug-in as a host drives it, editor included (it needs a
+    # display: on Linux run it under xvfb-run).
+    juce_add_console_app(FabCutieProcessorTests PRODUCT_NAME "FabCutieProcessorTests")
+    target_sources(FabCutieProcessorTests PRIVATE Tests/ProcessorTests.cpp)
+    target_include_directories(FabCutieProcessorTests PRIVATE Source)
+    target_compile_definitions(FabCutieProcessorTests PRIVATE JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
+    target_link_libraries(FabCutieProcessorTests
+        PRIVATE
+            FabCutie
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME ProcessorTests COMMAND FabCutieProcessorTests)
 endif()

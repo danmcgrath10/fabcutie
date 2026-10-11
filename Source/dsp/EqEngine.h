@@ -26,6 +26,13 @@ namespace fabcutie::dsp
                 band.prepare (sampleRate);
         }
 
+        // Clears every band's filter memory (after the signal went bad).
+        void clearState() noexcept
+        {
+            for (auto& band : bands)
+                band.clearState();
+        }
+
         // Message thread, before prepare(): the speaker roles of the main bus.
         void setChannelMap (const ChannelMap& map) noexcept { channelMap = map; }
 

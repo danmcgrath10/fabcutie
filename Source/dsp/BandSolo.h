@@ -17,6 +17,8 @@ namespace fabcutie::dsp
     public:
         void prepare (double sampleRate) { filter.prepare (sampleRate); }
 
+        void clearState() noexcept { filter.clearState(); }
+
         // Pass a disabled band to switch the solo off.
         void setBand (const BandSettings& band) noexcept { filter.setTarget (auditionFor (band)); }
 

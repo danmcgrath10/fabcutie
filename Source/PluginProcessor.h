@@ -12,6 +12,7 @@
 #include "dsp/EqEngine.h"
 #include "dsp/OutputStage.h"
 #include "dsp/PhaseModes.h"
+#include "dsp/Sanitise.h"
 #include "dsp/SpectralDynamics.h"
 #include "ui/EqModel.h"
 #include "workflow/ABCompare.h"
@@ -47,7 +48,11 @@ public:
     bool acceptsMidi() const override  { return JucePlugin_WantsMidiInput != 0; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override;
+
+    // The host's own bypass switch drives the Bypass button, so the two
+    // never disagree and both fade instead of clicking.
+    juce::AudioProcessorParameter* getBypassParameter() const override;
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -132,6 +137,7 @@ private:
     fabcutie::dsp::EqEngine eq;
     fabcutie::dsp::SpectralDynamics spectral;
     std::atomic<bool> spectralRunning { false }; // read on the message thread for latency
+    float spectralFade = 1.0f; // fades the output back in after the spectral stage switched
     std::atomic<bool> surroundLayout { false }; // more than two main channels
     fabcutie::dsp::CharacterStage characterStage;
     fabcutie::dsp::OutputStage outputStage;
@@ -162,7 +168,17 @@ private:
     void pushBandSettings() noexcept;
     void pushSoloSettings() noexcept;
     void pushCharacterMode() noexcept;
-    void updateSpectralStage() noexcept;
+    void processSpectralStage (juce::AudioBuffer<float>& main, juce::AudioBuffer<float>* sidechain) noexcept;
+
+    // Clears every stage's filter memory, after the output went bad.
+    void clearDspState() noexcept;
+
+    // Restoring a session off the message thread (some hosts do) leaves the
+    // preset list, A/B slots and undo history to the message thread.
+    juce::CriticalSection pendingRestoreLock;
+    juce::ValueTree pendingRestore;
+    std::atomic<bool> restorePending { false };
+    void finishRestore (const juce::ValueTree&);
     void pushPhaseMode() noexcept;
 
     bool hostBypassed = false; // inside processBlockBypassed
@@ -173,7 +189,7 @@ private:
     int totalLatency() const noexcept; // phase mode plus spectral dynamics
 
     // Latency follows the phase mode and spectral dynamics; the host is told
-    // from the message thread.
+    // from the message thread, which also finishes off-thread restores.
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void handleAsyncUpdate() override;
 
